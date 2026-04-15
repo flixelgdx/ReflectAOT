@@ -6,6 +6,7 @@ import me.stringdotjar.reflectaot.codegen.ReflectAOTOutput as CodegenOutput
  * Gradle DSL mirror of [me.stringdotjar.reflectaot.codegen.ReflectAOTOutput]. Default is [CLASS].
  */
 enum class ReflectAOTOutput {
+
   CLASS,
   JAVA,
   BOTH,

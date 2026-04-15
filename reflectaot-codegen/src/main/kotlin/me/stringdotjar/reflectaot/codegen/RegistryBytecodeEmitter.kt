@@ -11,6 +11,7 @@ import org.objectweb.asm.commons.Method as AsmMethod
  * Emits {@code me.stringdotjar.reflectaot.generated.ReflectAOTRegistry} implementing {@code ReflectAOTRuntime}.
  */
 object RegistryBytecodeEmitter {
+
   const val REGISTRY_INTERNAL = "me/stringdotjar/reflectaot/generated/ReflectAOTRegistry"
 
   private val OBJECT_TYPE = Type.getType(Object::class.java)

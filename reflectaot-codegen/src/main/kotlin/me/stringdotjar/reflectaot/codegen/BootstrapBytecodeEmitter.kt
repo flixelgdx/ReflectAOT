@@ -1,17 +1,18 @@
 package me.stringdotjar.reflectaot.codegen
 
+import java.io.File
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.commons.GeneratorAdapter
 import org.objectweb.asm.commons.Method
-import java.io.File
 
 /**
  * Emits `me.stringdotjar.reflectaot.generated.ReflectAOTBootstrap` with a static initializer that
  * installs [me.stringdotjar.reflectaot.generated.ReflectAOTRegistry] via [me.stringdotjar.reflectaot.ReflectAOTServices].
  */
 object BootstrapBytecodeEmitter {
+
   private const val BOOTSTRAP_INTERNAL = "me/stringdotjar/reflectaot/generated/ReflectAOTBootstrap"
   private val SERVICES_TYPE = Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTServices")
   private val REGISTRY_TYPE = Type.getObjectType("me/stringdotjar/reflectaot/generated/ReflectAOTRegistry")

@@ -11,6 +11,7 @@ import java.util.zip.ZipFile
  * Loads class metadata from bytecode for ReflectAOT accessor generation.
  */
 object TypeIntrospection {
+
   data class BeanProperty(
     val name: String,
     val getterName: String?,

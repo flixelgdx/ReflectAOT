@@ -17,6 +17,7 @@ import java.io.File
  * first {@code Object} receiver argument when it is known from bytecode (not {@code java/lang/Object}).
  */
 object ReflectUsageScanner {
+
   private const val REFLECT_INTERNAL = "me/stringdotjar/reflectaot/Reflect"
 
   private val TRACKED =

@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class BootstrapGoldenTest {
+
   @Test
   fun emitsBootstrapAndRegistryWithoutReflectPackage() {
     val dir = Files.createTempDirectory("reflectaot").toFile()

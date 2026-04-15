@@ -8,6 +8,7 @@ import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.testing.Test
 
 class ReflectAOTPlugin : Plugin<Project> {
+
   override fun apply(project: Project) {
     project.plugins.apply(JavaPlugin::class.java)
 

@@ -7,6 +7,7 @@ import java.io.File
 import kotlin.test.assertTrue
 
 class ReflectAOTPluginSmokeTest {
+
   @TempDir lateinit var temp: File
 
   @Test
@@ -29,6 +30,7 @@ class ReflectAOTPluginSmokeTest {
       package demo;
       import me.stringdotjar.reflectaot.Reflect;
       public class UseReflect {
+
           public static int cmp(Integer a, Integer b) { return Reflect.compare(a, b); }
       }
       """.trimIndent(),

@@ -1,10 +1,10 @@
 package me.stringdotjar.reflectaot.codegen
 
-import java.io.File
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.commons.GeneratorAdapter
+import java.io.File
 import org.objectweb.asm.commons.Method as AsmMethod
 
 /**

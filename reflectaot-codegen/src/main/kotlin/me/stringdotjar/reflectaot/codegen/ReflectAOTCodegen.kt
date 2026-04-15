@@ -4,6 +4,7 @@ import java.io.File
 
 /** Entry point invoked by the Gradle task. */
 object ReflectAOTCodegen {
+
   private val DEFAULT_EXCLUDES =
     listOf(
       "java.",

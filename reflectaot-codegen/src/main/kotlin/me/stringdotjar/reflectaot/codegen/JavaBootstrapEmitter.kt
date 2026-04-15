@@ -4,6 +4,7 @@ import java.io.File
 
 /** Emits Java source for a bootstrap that installs {@link me.stringdotjar.reflectaot.generated.ReflectAOTRegistry}. */
 object JavaBootstrapEmitter {
+
   fun emit(outputDir: File) {
     outputDir.mkdirs()
     val pkg = File(outputDir, "me/stringdotjar/reflectaot/generated")
@@ -16,6 +17,7 @@ object JavaBootstrapEmitter {
       import me.stringdotjar.reflectaot.ReflectAOTServices;
 
       public final class ReflectAOTBootstrap {
+
           static {
               ReflectAOTServices.install(new ReflectAOTRegistry());
           }

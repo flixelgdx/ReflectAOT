@@ -50,3 +50,8 @@ indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
+
+[*.{kt,kts}]
+# Project style: allow one blank line right after `object` / `class` opening `{` before the first member.
+# (Ktlint default forbids this; disable so it matches Java `ij_java_blank_lines_after_class_header`.)
+ktlint_standard_no-empty-first-line-in-class-body = disabled

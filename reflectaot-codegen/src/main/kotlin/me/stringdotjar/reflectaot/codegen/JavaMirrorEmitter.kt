@@ -7,6 +7,7 @@ import java.io.File
  * Emits Java 7-compatible sources mirroring the bytecode accessors and registry (for GWT-style pipelines).
  */
 object JavaMirrorEmitter {
+
   fun emit(
     javaOut: File,
     types: List<TypeIntrospection.IntrospectedType>,

@@ -3,6 +3,7 @@ package me.stringdotjar.reflectaot;
 import java.util.List;
 
 enum UnconfiguredReflectAOTRuntime implements ReflectAOTRuntime {
+
   INSTANCE;
 
   private static UnsupportedOperationException nx() {

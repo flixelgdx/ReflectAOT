@@ -9,6 +9,7 @@ import java.util.zip.ZipFile
  * <p>Used by ReflectAOT bytecode scanning. ASCII-only KDoc.
  */
 object ClasspathWalker {
+
   fun forEachClassFile(
     root: File,
     consumer: (internalName: String, bytes: ByteArray) -> Unit,
