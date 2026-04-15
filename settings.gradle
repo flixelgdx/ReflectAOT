@@ -4,7 +4,4 @@ plugins {
 
 rootProject.name = 'ReflectAOT'
 
-include 'reflectaot-runtime'
-include 'reflectaot-codegen'
-include 'reflectaot-gradle-plugin'
-
+include 'reflectaot-runtime', 'reflectaot-codegen', 'reflectaot-gradle-plugin'

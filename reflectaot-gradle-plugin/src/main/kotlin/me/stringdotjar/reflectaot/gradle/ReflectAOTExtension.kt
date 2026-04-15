@@ -5,9 +5,7 @@ import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 
-open class ReflectAOTExtension(
-  project: Project,
-) {
+open class ReflectAOTExtension(project: Project) {
 
   /** What to emit: bytecode, Java sources, or both. Defaults to [ReflectAOTOutput.CLASS]. */
   val output: Property<ReflectAOTOutput> =

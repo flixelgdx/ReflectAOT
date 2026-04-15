@@ -14,8 +14,7 @@ class ReflectAOTPlugin : Plugin<Project> {
 
     val ext = project.extensions.create("reflectaot", ReflectAOTExtension::class.java, project)
 
-    val embeddedRuntime =
-      ReflectAOTPlugin::class.java.getResource("/META-INF/reflectaot/reflectaot-runtime-embedded.jar")
+    val embeddedRuntime = ReflectAOTPlugin::class.java.getResource("/META-INF/reflectaot/reflectaot-runtime-embedded.jar")
     if (embeddedRuntime != null) {
       val tmp =
         project.layout.buildDirectory
@@ -44,7 +43,7 @@ class ReflectAOTPlugin : Plugin<Project> {
     val main = javaExt.sourceSets.getByName("main")
 
     val genTask =
-      project.tasks.register("generateReflectAOT", GenerateReflectAOTTask::class.java) { task ->
+      project.tasks.register("generateReflectAOT", ReflectAOTDefaultTask::class.java) { task ->
         task.group = "reflectaot"
         task.description = "Scans bytecode and generates ReflectAOT registry and accessor artifacts."
         task.outputMode.set(ext.output)
