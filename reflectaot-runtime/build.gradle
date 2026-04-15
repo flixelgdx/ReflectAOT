@@ -1,0 +1,56 @@
+plugins {
+  id 'java-library'
+  id 'maven-publish'
+}
+
+java {
+  sourceCompatibility = JavaVersion.VERSION_1_8
+  targetCompatibility = JavaVersion.VERSION_1_8
+  withJavadocJar()
+  withSourcesJar()
+}
+
+tasks.named('javadoc', Javadoc) {
+  options.encoding = 'UTF-8'
+}
+
+dependencies {
+  testImplementation platform('org.junit:junit-bom:5.11.4')
+  testImplementation 'org.junit.jupiter:junit-jupiter'
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+  useJUnitPlatform()
+}
+
+publishing {
+  publications {
+    maven(MavenPublication) {
+      from components.java
+      pom {
+        name = 'reflectaot-runtime'
+        description = 'ReflectAOT hand-written Reflect API (Haxe-compatible surface, no java.lang.reflect).'
+        url = 'https://github.com/stringfromjava/ReflectAOT'
+        licenses {
+          license {
+            name = 'Apache License, Version 2.0'
+            url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+          }
+        }
+        developers {
+          developer {
+            id = 'stringfromjava'
+            name = 'ReflectAOT maintainers'
+          }
+        }
+        scm {
+          connection = 'scm:git:git://github.com/stringfromjava/ReflectAOT.git'
+          developerConnection = 'scm:git:ssh://git@github.com:stringfromjava/ReflectAOT.git'
+          url = 'https://github.com/stringfromjava/ReflectAOT'
+        }
+      }
+    }
+  }
+}
+

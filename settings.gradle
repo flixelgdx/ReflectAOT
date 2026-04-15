@@ -1,4 +1,10 @@
 plugins {
   id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
+
 rootProject.name = 'ReflectAOT'
+
+include 'reflectaot-runtime'
+include 'reflectaot-codegen'
+include 'reflectaot-gradle-plugin'
+

@@ -1,0 +1,14 @@
+# Example maintainer properties (copy values into your ~/.gradle/gradle.properties or CI secrets).
+# Do not commit real credentials.
+
+# Optional: print a reminder about Maven Central wiring (the repo does not ship a hard-coded publisher).
+# reflectaot.publish.central=true
+
+# Common Maven Central authentication (names vary by plugin setup).
+# mavenCentralUsername=
+# mavenCentralPassword=
+
+# Signing (GPG) for Central-required signatures.
+# signing.keyId=
+# signing.password=
+# signing.secretKeyRingFile=

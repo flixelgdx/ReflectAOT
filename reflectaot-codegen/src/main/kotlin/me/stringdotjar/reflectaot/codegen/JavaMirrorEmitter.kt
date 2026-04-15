@@ -1,0 +1,438 @@
+package me.stringdotjar.reflectaot.codegen
+
+import org.objectweb.asm.Type
+import java.io.File
+
+/**
+ * Emits Java 7-compatible sources mirroring the bytecode accessors and registry (for GWT-style pipelines).
+ */
+object JavaMirrorEmitter {
+  fun emit(
+    javaOut: File,
+    types: List<TypeIntrospection.IntrospectedType>,
+  ) {
+    val sorted = types.sortedBy { it.internalName }
+    for (t in sorted) {
+      emitAccessor(javaOut, t)
+    }
+    emitRegistry(javaOut, sorted)
+  }
+
+  private fun fqcn(internalName: String): String = internalName.replace('/', '.')
+
+  private fun accessClassFqcn(internalName: String): String =
+    fqcn(AccessBytecodeEmitter.accessInternalName(internalName))
+
+  private fun emitAccessor(
+    javaOut: File,
+    t: TypeIntrospection.IntrospectedType,
+  ) {
+    val fq = fqcn(t.internalName)
+    val accessFq = accessClassFqcn(t.internalName)
+    val pkg = accessFq.substring(0, accessFq.lastIndexOf('.'))
+    val simple = accessFq.substring(accessFq.lastIndexOf('.') + 1)
+    val dir = File(javaOut, pkg.replace('.', '/'))
+    dir.mkdirs()
+
+    val sb = StringBuilder()
+    sb.append("package ").append(pkg).append(";\n\n")
+    sb.append("import java.util.ArrayList;\n")
+    sb.append("import java.util.List;\n\n")
+    sb.append("public final class ").append(simple).append(" {\n")
+    sb.append("  private ").append(simple).append("() {}\n\n")
+
+    sb.append(renderField(fq, t))
+    sb.append(renderSetField(fq, t))
+    sb.append(renderHasField(fq, t))
+    sb.append(renderGetProperty(fq, t))
+    sb.append(renderSetProperty(fq, t))
+    sb.append(renderFields(fq, t))
+
+    sb.append("}\n")
+
+    File(dir, "$simple.java").writeText(sb.toString())
+  }
+
+  private fun renderField(
+    fq: String,
+    t: TypeIntrospection.IntrospectedType,
+  ): String {
+    val sb = StringBuilder()
+    sb.append("  public static Object field(").append(fq).append(" o, String name) {\n")
+    sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
+    for ((name, desc) in t.fields) {
+      sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
+      sb.append("      return ").append(boxRead("o." + name, desc)).append(";\n")
+      sb.append("    }\n")
+    }
+    sb.append("    throw new IllegalArgumentException(\"Unknown field\");\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderSetField(
+    fq: String,
+    t: TypeIntrospection.IntrospectedType,
+  ): String {
+    val sb = StringBuilder()
+    sb.append("  public static void setField(").append(fq).append(" o, String name, Object value) {\n")
+    sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
+    for ((name, desc) in t.fields) {
+      sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
+      sb
+        .append("      o.")
+        .append(name)
+        .append(" = ")
+        .append(unboxAssign("value", desc))
+        .append(";\n")
+      sb.append("      return;\n")
+      sb.append("    }\n")
+    }
+    sb.append("    throw new IllegalArgumentException(\"Unknown field\");\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderHasField(
+    fq: String,
+    t: TypeIntrospection.IntrospectedType,
+  ): String {
+    val names = LinkedHashSet<String>()
+    t.fields.keys.forEach { names.add(it) }
+    t.properties.forEach { names.add(it.name) }
+    val sb = StringBuilder()
+    sb.append("  public static boolean hasField(").append(fq).append(" o, String name) {\n")
+    sb.append("    if (name == null) return false;\n")
+    for (n in names) {
+      sb.append("    if (\"").append(escape(n)).append("\".equals(name)) return true;\n")
+    }
+    sb.append("    return false;\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderGetProperty(
+    fq: String,
+    t: TypeIntrospection.IntrospectedType,
+  ): String {
+    val sb = StringBuilder()
+    sb.append("  public static Object getProperty(").append(fq).append(" o, String name) {\n")
+    sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
+    for (p in t.properties) {
+      sb.append("    if (\"").append(escape(p.name)).append("\".equals(name)) {\n")
+      if (p.getterName != null && p.getterDesc != null) {
+        val ret = Type.getReturnType(p.getterDesc).descriptor
+        sb.append("      return ").append(boxRead("o." + p.getterName + "()", ret)).append(";\n")
+      } else if (p.fieldName != null && t.fields.containsKey(p.fieldName)) {
+        val fd = t.fields[p.fieldName]!!
+        sb.append("      return ").append(boxRead("o." + p.fieldName, fd)).append(";\n")
+      } else {
+        sb.append(
+          "      throw new IllegalArgumentException(\"No readable property " + escape(p.name) + "\");\n",
+        )
+      }
+      sb.append("    }\n")
+    }
+    for ((name, desc) in t.fields) {
+      sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
+      sb.append("      return ").append(boxRead("o." + name, desc)).append(";\n")
+      sb.append("    }\n")
+    }
+    sb.append("    throw new IllegalArgumentException(\"Unknown property\");\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderSetProperty(
+    fq: String,
+    t: TypeIntrospection.IntrospectedType,
+  ): String {
+    val sb = StringBuilder()
+    sb.append("  public static void setProperty(").append(fq).append(" o, String name, Object value) {\n")
+    sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
+    for (p in t.properties) {
+      sb.append("    if (\"").append(escape(p.name)).append("\".equals(name)) {\n")
+      if (p.setterName != null && p.setterDesc != null) {
+        val args = Type.getArgumentTypes(p.setterDesc)
+        if (args.size == 1) {
+          val ad = args[0].descriptor
+          sb
+            .append(
+              "      o.",
+            ).append(p.setterName)
+            .append("(")
+            .append(unboxAssign("value", ad))
+            .append(");\n")
+          sb.append("      return;\n")
+        } else if (p.fieldName != null && t.fields.containsKey(p.fieldName)) {
+          val fd = t.fields[p.fieldName]!!
+          sb
+            .append(
+              "      o.",
+            ).append(p.fieldName)
+            .append(" = ")
+            .append(unboxAssign("value", fd))
+            .append(";\n")
+          sb.append("      return;\n")
+        } else {
+          sb.append(
+            "      throw new IllegalArgumentException(\"No writable property " + escape(p.name) + "\");\n",
+          )
+        }
+      } else if (p.fieldName != null && t.fields.containsKey(p.fieldName)) {
+        val fd = t.fields[p.fieldName]!!
+        sb
+          .append("      o.")
+          .append(p.fieldName)
+          .append(" = ")
+          .append(unboxAssign("value", fd))
+          .append(";\n")
+        sb.append("      return;\n")
+      } else {
+        sb.append(
+          "      throw new IllegalArgumentException(\"No writable property " + escape(p.name) + "\");\n",
+        )
+      }
+      sb.append("    }\n")
+    }
+    for ((name, desc) in t.fields) {
+      sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
+      sb
+        .append("      o.")
+        .append(name)
+        .append(" = ")
+        .append(unboxAssign("value", desc))
+        .append(";\n")
+      sb.append("      return;\n")
+      sb.append("    }\n")
+    }
+    sb.append("    throw new IllegalArgumentException(\"Unknown property\");\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderFields(
+    fq: String,
+    t: TypeIntrospection.IntrospectedType,
+  ): String {
+    val names = LinkedHashSet<String>()
+    t.fields.keys.forEach { names.add(it) }
+    t.properties.forEach { names.add(it.name) }
+    val sb = StringBuilder()
+    sb.append("  public static List<String> fields(").append(fq).append(" o) {\n")
+    sb.append("    ArrayList<String> out = new ArrayList<String>();\n")
+    for (n in names) {
+      sb.append("    out.add(\"").append(escape(n)).append("\");\n")
+    }
+    sb.append("    return out;\n")
+    sb.append("  }\n")
+    return sb.toString()
+  }
+
+  private fun emitRegistry(
+    javaOut: File,
+    sorted: List<TypeIntrospection.IntrospectedType>,
+  ) {
+    val pkg = "me.stringdotjar.reflectaot.generated"
+    val dir = File(javaOut, pkg.replace('.', '/'))
+    dir.mkdirs()
+    val sb = StringBuilder()
+    sb.append("package ").append(pkg).append(";\n\n")
+    sb.append("import java.util.Collections;\n")
+    sb.append("import java.util.List;\n")
+    sb.append("import me.stringdotjar.reflectaot.ReflectAOTDefaultDispatch;\n")
+    sb.append("import me.stringdotjar.reflectaot.ReflectAOTRuntime;\n")
+    for (t in sorted) {
+      sb.append("import ").append(accessClassFqcn(t.internalName)).append(";\n")
+    }
+    sb.append("\npublic final class ReflectAOTRegistry implements ReflectAOTRuntime {\n")
+    sb.append("  public ReflectAOTRegistry() {}\n\n")
+
+    sb.append("  public int compare(Object a, Object b) { return ReflectAOTDefaultDispatch.compare(a, b); }\n")
+    sb.append(
+      "  public boolean compareMethods(Object f1, Object f2) { return ReflectAOTDefaultDispatch.compareMethods(f1, f2); }\n",
+    )
+    sb.append("  public boolean isFunction(Object v) { return ReflectAOTDefaultDispatch.isFunction(v); }\n")
+    sb.append("  public boolean isObject(Object v) { return ReflectAOTDefaultDispatch.isObject(v); }\n")
+    sb.append("  public Object makeVarArgs(Object f) { return ReflectAOTDefaultDispatch.makeVarArgs(f); }\n")
+    sb.append("  public boolean isEnumValue(Object v) { return ReflectAOTDefaultDispatch.isEnumValue(v); }\n")
+    sb.append(
+      "  public Object callMethod(Object o, Object func, List<?> args) { return ReflectAOTDefaultDispatch.callMethod(o, func, args); }\n",
+    )
+    sb.append("  public Object copy(Object o) { return ReflectAOTDefaultDispatch.copy(o); }\n")
+    sb.append(
+      "  public boolean deleteField(Object o, String name) { return ReflectAOTDefaultDispatch.deleteField(o, name); }\n\n",
+    )
+
+    sb.append(renderRegistryDispatch("hasField", "boolean", sorted, "hasField"))
+    sb.append(renderRegistryDispatch("field", "Object", sorted, "field"))
+    sb.append(renderRegistryDispatchVoid("setField", sorted, "setField"))
+    sb.append(renderRegistryDispatch("getProperty", "Object", sorted, "getProperty"))
+    sb.append(renderRegistryDispatchVoid("setProperty", sorted, "setProperty"))
+    sb.append(renderRegistryFields(sorted))
+
+    sb.append("}\n")
+    File(dir, "ReflectAOTRegistry.java").writeText(sb.toString())
+  }
+
+  private fun renderRegistryDispatch(
+    name: String,
+    ret: String,
+    sorted: List<TypeIntrospection.IntrospectedType>,
+    accessMethod: String,
+  ): String {
+    val sb = StringBuilder()
+    sb
+      .append("  public ")
+      .append(ret)
+      .append(" ")
+      .append(name)
+      .append("(Object o, String name) {\n")
+    if (sorted.isEmpty()) {
+      if (ret == "boolean") {
+        sb.append("    return false;\n")
+      } else {
+        sb
+          .append(
+            "    throw new UnsupportedOperationException(\"Reflect.",
+          ).append(name)
+          .append(" not specialized\");\n")
+      }
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    for (t in sorted) {
+      val fq = fqcn(t.internalName)
+      val acc = accessClassFqcn(t.internalName)
+      sb.append("    if (o instanceof ").append(fq).append(") {\n")
+      sb
+        .append(
+          "      return ",
+        ).append(acc)
+        .append(".")
+        .append(accessMethod)
+        .append("((")
+        .append(fq)
+        .append(") o, name);\n")
+      sb.append("    }\n")
+    }
+    if (ret == "boolean") {
+      sb.append("    return false;\n")
+    } else {
+      sb
+        .append(
+          "    throw new UnsupportedOperationException(\"Reflect.",
+        ).append(name)
+        .append(" not specialized for receiver\");\n")
+    }
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderRegistryDispatchVoid(
+    name: String,
+    sorted: List<TypeIntrospection.IntrospectedType>,
+    accessMethod: String,
+  ): String {
+    val sb = StringBuilder()
+    sb.append("  public void ").append(name).append("(Object o, String name, Object value) {\n")
+    if (sorted.isEmpty()) {
+      sb
+        .append(
+          "    throw new UnsupportedOperationException(\"Reflect.",
+        ).append(name)
+        .append(" not specialized\");\n")
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    for (t in sorted) {
+      val fq = fqcn(t.internalName)
+      val acc = accessClassFqcn(t.internalName)
+      sb.append("    if (o instanceof ").append(fq).append(") {\n")
+      sb
+        .append(
+          "      ",
+        ).append(acc)
+        .append(".")
+        .append(accessMethod)
+        .append("((")
+        .append(fq)
+        .append(") o, name, value);\n")
+      sb.append("      return;\n")
+      sb.append("    }\n")
+    }
+    sb
+      .append(
+        "    throw new UnsupportedOperationException(\"Reflect.",
+      ).append(name)
+      .append(" not specialized for receiver\");\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderRegistryFields(sorted: List<TypeIntrospection.IntrospectedType>): String {
+    val sb = StringBuilder()
+    sb.append("  public List<String> fields(Object o) {\n")
+    if (sorted.isEmpty()) {
+      sb.append("    return Collections.emptyList();\n")
+      sb.append("  }\n")
+      return sb.toString()
+    }
+    for (t in sorted) {
+      val fq = fqcn(t.internalName)
+      val acc = accessClassFqcn(t.internalName)
+      sb.append("    if (o instanceof ").append(fq).append(") {\n")
+      sb
+        .append("      return ")
+        .append(acc)
+        .append(".fields((")
+        .append(fq)
+        .append(") o);\n")
+      sb.append("    }\n")
+    }
+    sb.append("    return Collections.emptyList();\n")
+    sb.append("  }\n")
+    return sb.toString()
+  }
+
+  private fun escape(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
+
+  private fun boxRead(
+    expr: String,
+    desc: String,
+  ): String =
+    when (desc) {
+      "I" -> "Integer.valueOf(" + expr + ")"
+      "Z" -> "Boolean.valueOf(" + expr + ")"
+      "J" -> "Long.valueOf(" + expr + ")"
+      "D" -> "Double.valueOf(" + expr + ")"
+      "F" -> "Float.valueOf(" + expr + ")"
+      "B" -> "Byte.valueOf(" + expr + ")"
+      "S" -> "Short.valueOf(" + expr + ")"
+      "C" -> "Character.valueOf(" + expr + ")"
+      else -> expr
+    }
+
+  private fun unboxAssign(
+    value: String,
+    desc: String,
+  ): String =
+    when (desc) {
+      "I" -> "((Number) " + value + ").intValue()"
+      "Z" -> "((Boolean) " + value + ").booleanValue()"
+      "J" -> "((Number) " + value + ").longValue()"
+      "D" -> "((Number) " + value + ").doubleValue()"
+      "F" -> "((Number) " + value + ").floatValue()"
+      "B" -> "((Number) " + value + ").byteValue()"
+      "S" -> "((Number) " + value + ").shortValue()"
+      "C" -> "(char) ((Character) " + value + ").charValue()"
+      else -> "(" + fqDesc(desc) + ") " + value
+    }
+
+  private fun fqDesc(fieldDesc: String): String {
+    if (fieldDesc.startsWith("L") && fieldDesc.endsWith(";")) {
+      return fieldDesc.substring(1, fieldDesc.length - 1).replace('/', '.')
+    }
+    return "java.lang.Object"
+  }
+}

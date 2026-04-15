@@ -1,0 +1,76 @@
+plugins {
+  id 'java-gradle-plugin'
+  id 'org.jetbrains.kotlin.jvm' version '2.3.0'
+  id 'maven-publish'
+}
+
+def embedReflectAOTRuntime = tasks.register('embedReflectAOTRuntime', Copy) {
+  dependsOn ':reflectaot-runtime:jar'
+  from(project(':reflectaot-runtime').tasks.named('jar'))
+  rename { 'reflectaot-runtime-embedded.jar' }
+  into(layout.buildDirectory.dir('generatedReflectResources/META-INF/reflectaot'))
+}
+
+sourceSets.main.resources.srcDir(layout.buildDirectory.dir('generatedReflectResources'))
+tasks.named('processResources', ProcessResources).configure { dependsOn embedReflectAOTRuntime }
+
+kotlin {
+  jvmToolchain(17)
+}
+
+dependencies {
+  implementation project(':reflectaot-codegen')
+  implementation gradleApi()
+
+  testImplementation gradleTestKit()
+  testImplementation project(':reflectaot-runtime')
+  testImplementation 'org.jetbrains.kotlin:kotlin-test'
+  testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5'
+  testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.4'
+}
+
+gradlePlugin {
+  plugins {
+    reflectaot {
+      id = 'me.stringdotjar.reflectaot'
+      implementationClass = 'me.stringdotjar.reflectaot.gradle.ReflectAOTPlugin'
+      displayName = 'ReflectAOT'
+      description = 'Build-time Reflect accessors without java.lang.reflect.'
+    }
+  }
+}
+
+tasks.test {
+  useJUnitPlatform()
+}
+
+publishing {
+  publications {
+    pluginMaven(MavenPublication) {
+      artifactId = 'reflectaot-gradle-plugin'
+      pom {
+        name = 'reflectaot-gradle-plugin'
+        description = 'ReflectAOT Gradle plugin: bytecode scanning, accessor generation, runtime injection.'
+        url = 'https://github.com/stringfromjava/ReflectAOT'
+        licenses {
+          license {
+            name = 'Apache License, Version 2.0'
+            url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+          }
+        }
+        developers {
+          developer {
+            id = 'stringfromjava'
+            name = 'ReflectAOT maintainers'
+          }
+        }
+        scm {
+          connection = 'scm:git:git://github.com/stringfromjava/ReflectAOT.git'
+          developerConnection = 'scm:git:ssh://git@github.com:stringfromjava/ReflectAOT.git'
+          url = 'https://github.com/stringfromjava/ReflectAOT'
+        }
+      }
+    }
+  }
+}
+

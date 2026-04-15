@@ -1,0 +1,63 @@
+plugins {
+ id 'org.jetbrains.kotlin.jvm' version '2.3.0'
+ id 'java-library'
+ id 'maven-publish'
+}
+
+kotlin {
+ jvmToolchain(17)
+}
+
+java {
+ withSourcesJar()
+}
+
+dependencies {
+ api 'org.ow2.asm:asm:9.8'
+ api 'org.ow2.asm:asm-commons:9.8'
+ api 'org.ow2.asm:asm-tree:9.8'
+ api 'org.ow2.asm:asm-analysis:9.8'
+
+ testImplementation 'org.jetbrains.kotlin:kotlin-test'
+ testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5'
+ testImplementation platform('org.junit:junit-bom:5.11.4')
+ testImplementation 'org.junit.jupiter:junit-jupiter'
+ testImplementation 'org.ow2.asm:asm-util:9.8'
+ testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.4'
+ testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.test {
+ useJUnitPlatform()
+}
+
+publishing {
+ publications {
+  maven(MavenPublication) {
+   from components.java
+   pom {
+    name = 'reflectaot-codegen'
+    description = 'ReflectAOT build-time codegen (ASM / optional Java emit).'
+    url = 'https://github.com/stringfromjava/ReflectAOT'
+    licenses {
+     license {
+      name = 'Apache License, Version 2.0'
+      url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+     }
+    }
+    developers {
+     developer {
+      id = 'stringfromjava'
+      name = 'ReflectAOT maintainers'
+     }
+    }
+    scm {
+     connection = 'scm:git:git://github.com/stringfromjava/ReflectAOT.git'
+     developerConnection = 'scm:git:ssh://git@github.com:stringfromjava/ReflectAOT.git'
+     url = 'https://github.com/stringfromjava/ReflectAOT'
+    }
+   }
+  }
+ }
+}
+
