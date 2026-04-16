@@ -2,7 +2,15 @@ package me.stringdotjar.reflectaot.codegen
 
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
+import org.objectweb.asm.tree.AbstractInsnNode
 import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.FieldInsnNode
+import org.objectweb.asm.tree.FrameNode
+import org.objectweb.asm.tree.InsnNode
+import org.objectweb.asm.tree.IntInsnNode
+import org.objectweb.asm.tree.LabelNode
+import org.objectweb.asm.tree.LdcInsnNode
+import org.objectweb.asm.tree.LineNumberNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.analysis.Analyzer
@@ -68,7 +76,10 @@ object ReflectUsageScanner {
     val hits = ArrayList<CallSite>()
     val cn = ClassNode()
     val cr = org.objectweb.asm.ClassReader(bytes)
-    cr.accept(cn, org.objectweb.asm.ClassReader.SKIP_DEBUG)
+    // Ignore StackMapTable and recompute frames from raw bytecode. OpenJ9 + large methods can
+    // otherwise widen operand stack references to java/lang/Object in ASM's Analyzer.
+    // Keep debug metadata (SKIP_DEBUG not set) so optional future heuristics can use locals.
+    cr.accept(cn, org.objectweb.asm.ClassReader.SKIP_FRAMES)
     for (m in cn.methods) {
       hits.addAll(scanMethod(cn.name, m))
     }
@@ -121,11 +132,120 @@ object ReflectUsageScanner {
       }
       val internal = recvType.internalName
       if (internal == "java/lang/Object") {
-        hits.add(CallSite(null, insn.name))
+        val refined =
+          refineReceiverFromPrecedingBytecode(insns, i, insn)
+            ?: "java/lang/Object"
+        if (refined == "java/lang/Object") {
+          hits.add(CallSite(null, insn.name))
+        } else {
+          hits.add(CallSite(refined, insn.name))
+        }
       } else {
         hits.add(CallSite(internal, insn.name))
       }
     }
     return hits
+  }
+
+  /**
+   * When ASM's dataflow merges the receiver to [java/lang/Object], recover a concrete reference
+   * type from the immediately preceding bytecode for common `Reflect.*(recv, "name", ...)` shapes
+   * emitted by javac (field read + string literal + boxed primitive literal).
+   */
+  private fun refineReceiverFromPrecedingBytecode(
+    insns: Array<AbstractInsnNode>,
+    invokeIndex: Int,
+    reflectCall: MethodInsnNode,
+  ): String? {
+    var p = invokeIndex - 1
+    p = skipNonInstructionsBackward(insns, p)
+    if (p < 0) {
+      return null
+    }
+    val argCount = Type.getArgumentTypes(reflectCall.desc).size
+    when (argCount) {
+      3 -> {
+        p = stripTrailingBoxedIntLiteralBackward(insns, p)
+        p = skipNonInstructionsBackward(insns, p)
+        val two = insns.getOrNull(p)
+        if (two !is LdcInsnNode || two.cst !is String) {
+          return null
+        }
+        p--
+      }
+      2 -> {
+        val two = insns.getOrNull(p)
+        if (two is LdcInsnNode && two.cst is String) {
+          p--
+        }
+      }
+      1 -> {
+        // single receiver arg only
+      }
+      else -> return null
+    }
+    p = skipNonInstructionsBackward(insns, p)
+    val recvInsn = insns.getOrNull(p) ?: return null
+    if (recvInsn is FieldInsnNode &&
+      (recvInsn.opcode == Opcodes.GETFIELD || recvInsn.opcode == Opcodes.GETSTATIC)
+    ) {
+      val t = Type.getType(recvInsn.desc)
+      if (t.sort == Type.OBJECT || t.sort == Type.ARRAY) {
+        return t.internalName
+      }
+    }
+    return null
+  }
+
+  private fun skipNonInstructionsBackward(
+    insns: Array<AbstractInsnNode>,
+    p: Int,
+  ): Int {
+    var q = p
+    while (q >= 0) {
+      val n = insns[q]
+      if (n is LineNumberNode || n is FrameNode || n is LabelNode) {
+        q--
+      } else {
+        break
+      }
+    }
+    return q
+  }
+
+  private fun stripTrailingBoxedIntLiteralBackward(
+    insns: Array<AbstractInsnNode>,
+    p: Int,
+  ): Int {
+    if (p < 0) {
+      return p
+    }
+    val top = insns[p]
+    if (top is MethodInsnNode &&
+      top.opcode == Opcodes.INVOKESTATIC &&
+      top.owner == "java/lang/Integer" &&
+      top.name == "valueOf" &&
+      top.desc == "(I)Ljava/lang/Integer;"
+    ) {
+      var q = p - 1
+      q = skipNonInstructionsBackward(insns, q)
+      val lit = insns.getOrNull(q) ?: return p
+      when {
+        lit is IntInsnNode &&
+          (lit.opcode == Opcodes.BIPUSH || lit.opcode == Opcodes.SIPUSH) -> {
+          return q - 1
+        }
+        lit is InsnNode &&
+          lit.opcode >= Opcodes.ICONST_M1 &&
+          lit.opcode <= Opcodes.ICONST_5 -> {
+          return q - 1
+        }
+        else -> return p
+      }
+    }
+    if (top is LdcInsnNode && top.cst is Int) {
+      return p - 1
+    }
+    return p
   }
 }

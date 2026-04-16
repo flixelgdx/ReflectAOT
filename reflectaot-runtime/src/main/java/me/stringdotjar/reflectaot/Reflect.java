@@ -27,7 +27,12 @@ public final class Reflect {
     } catch (ClassNotFoundException ignored) {
       // Generated bootstrap not on classpath yet (e.g. before generateReflectAOT runs).
     } catch (Throwable t) {
-      throw new ExceptionInInitializerError(t);
+      // Avoid ExceptionInInitializerError here: TeaVM and other JCL subsets often omit it, which
+      // breaks transpilation or runtime. Use a normal unchecked exception instead.
+      if (t instanceof Error) {
+        throw (Error) t;
+      }
+      throw new IllegalStateException("ReflectAOT bootstrap class failed to load", t);
     }
   }
 
