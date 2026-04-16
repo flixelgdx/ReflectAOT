@@ -33,6 +33,8 @@ class BootstrapGoldenTest {
     val text = sw.toString()
     assertTrue(text.contains("ReflectAOTServices"))
     assertTrue(text.contains("ReflectAOTRegistry"))
+    assertTrue(text.contains("ReflectAOTMethodIdTable"))
+    assertTrue(text.contains("installMethodIds"))
     assertTrue(!text.contains("java/lang/reflect/"), "generated bootstrap must not reference java.lang.reflect")
   }
 }

@@ -8,6 +8,8 @@ public final class ReflectAOTServices {
 
   private static volatile ReflectAOTRuntime runtime = UnconfiguredReflectAOTRuntime.INSTANCE;
 
+  private static volatile ReflectAOTMethodIdResolver methodIds = null;
+
   private ReflectAOTServices() {}
 
   /**
@@ -30,5 +32,44 @@ public final class ReflectAOTServices {
    */
   public static ReflectAOTRuntime runtime() {
     return runtime;
+  }
+
+  /**
+   * Installs the generated {@link ReflectAOTMethodIdResolver} (normally from {@code
+   * ReflectAOTBootstrap}).
+   *
+   * @param resolver non-null resolver
+   */
+  public static void installMethodIds(ReflectAOTMethodIdResolver resolver) {
+    if (resolver == null) {
+      throw new IllegalArgumentException("resolver");
+    }
+    ReflectAOTServices.methodIds = resolver;
+  }
+
+  /**
+   * @return resolver installed by generated bootstrap, or {@code null} before bootstrap runs
+   */
+  public static ReflectAOTMethodIdResolver methodIdsOrNull() {
+    return methodIds;
+  }
+
+  /**
+   * Resolves a {@link ReflectMethodId} for {@link Reflect#methodId(Class, String, String)}.
+   *
+   * @param clazz receiver class literal from the call site
+   * @param name JVM method name
+   * @param descriptor JVM method descriptor
+   * @return build-stable id token
+   * @throws UnsupportedOperationException when no resolver is installed yet
+   */
+  public static ReflectMethodId resolveMethodId(Class<?> clazz, String name, String descriptor) {
+    ReflectAOTMethodIdResolver r = methodIds;
+    if (r == null) {
+      throw new UnsupportedOperationException(
+          "Reflect.methodId: no generated ReflectAOTMethodIdTable installed. "
+              + "Run the generateReflectAOT Gradle task and ensure ReflectAOTBootstrap is on the classpath.");
+    }
+    return r.resolve(clazz, name, descriptor);
   }
 }

@@ -21,11 +21,19 @@ object TypeIntrospection {
     val fieldName: String?,
   )
 
+  data class InstanceMethod(
+    val name: String,
+    val descriptor: String,
+    val declaringInternal: String,
+  )
+
   data class IntrospectedType(
     val internalName: String,
     /** Declared instance field names (subclass before superclass) mapped to field descriptors. */
     val fields: LinkedHashMap<String, String>,
     val properties: List<BeanProperty>,
+    /** Public instance methods (most specific override first), keyed by name+descriptor. */
+    val instanceMethods: List<InstanceMethod>,
   )
 
   fun load(
@@ -48,6 +56,29 @@ object TypeIntrospection {
         if (!fieldsInOrder.containsKey(fn.name)) {
           fieldsInOrder[fn.name!!] = fn.desc!!
         }
+      }
+    }
+
+    val instanceMethodsByKey = LinkedHashMap<Pair<String, String>, InstanceMethod>()
+    for (layer in chain) {
+      val decl = layer.name ?: continue
+      for (mn in layer.methods) {
+        val acc = mn.access
+        if ((acc and Opcodes.ACC_STATIC) != 0) {
+          continue
+        }
+        if ((acc and Opcodes.ACC_SYNTHETIC) != 0) {
+          continue
+        }
+        if (mn.name == "<init>") {
+          continue
+        }
+        if ((acc and Opcodes.ACC_PUBLIC) == 0) {
+          continue
+        }
+        val n = mn.name ?: continue
+        val d = mn.desc ?: continue
+        instanceMethodsByKey.putIfAbsent(n to d, InstanceMethod(n, d, decl))
       }
     }
 
@@ -106,7 +137,12 @@ object TypeIntrospection {
       }
     }
 
-    return IntrospectedType(internalName = internalName, fields = fieldsInOrder, properties = props.values.toList())
+    return IntrospectedType(
+      internalName = internalName,
+      fields = fieldsInOrder,
+      properties = props.values.toList(),
+      instanceMethods = instanceMethodsByKey.values.toList(),
+    )
   }
 
   private fun buildSuperChain(

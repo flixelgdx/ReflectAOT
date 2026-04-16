@@ -6,6 +6,7 @@ import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.testing.Test
+import java.io.File
 
 class ReflectAOTPlugin : Plugin<Project> {
 
@@ -16,16 +17,50 @@ class ReflectAOTPlugin : Plugin<Project> {
 
     val embeddedRuntime = ReflectAOTPlugin::class.java.getResource("/META-INF/reflectaot/reflectaot-runtime-embedded.jar")
     if (embeddedRuntime != null) {
-      val tmp =
-        project.layout.buildDirectory
-          .file("tmp/reflectaot-runtime-embedded.jar")
-          .get()
-          .asFile
-      tmp.parentFile.mkdirs()
-      embeddedRuntime.openStream().use { input -> tmp.outputStream().use { out -> input.copyTo(out) } }
+      val version =
+        ReflectAOTPlugin::class.java
+          .getResourceAsStream("/META-INF/reflectaot/runtime-version.txt")
+          ?.use { it.bufferedReader().readText().trim() }
+          ?: "0.1.0-SNAPSHOT"
+      val repoRoot =
+        project.layout.buildDirectory.dir("reflectaot-embedded-m2/repository").get().asFile.apply {
+          mkdirs()
+        }
+      val moduleDir =
+        File(repoRoot, "me/stringdotjar/reflectaot-runtime-embedded/$version").apply {
+          mkdirs()
+        }
+      val pom =
+        """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>me.stringdotjar</groupId>
+  <artifactId>reflectaot-runtime-embedded</artifactId>
+  <version>$version</version>
+  <packaging>jar</packaging>
+</project>
+"""
+      File(moduleDir, "reflectaot-runtime-embedded-$version.pom").writeText(pom)
+      embeddedRuntime.openStream().use { input ->
+        File(moduleDir, "reflectaot-runtime-embedded-$version.jar").outputStream().use { out ->
+          input.copyTo(out)
+        }
+      }
+      ReflectAOTPlugin::class.java
+        .getResourceAsStream("/META-INF/reflectaot/reflectaot-runtime-embedded-sources.jar")
+        ?.use { input ->
+          File(moduleDir, "reflectaot-runtime-embedded-$version-sources.jar").outputStream().use { out ->
+            input.copyTo(out)
+          }
+        }
+      project.repositories.maven { repo ->
+        repo.url = project.uri(repoRoot)
+        repo.name = "ReflectAOTEmbeddedRuntime"
+      }
       project.dependencies.add(
         JavaPlugin.IMPLEMENTATION_CONFIGURATION_NAME,
-        project.files(tmp),
+        "me.stringdotjar:reflectaot-runtime-embedded:$version",
       )
     } else {
       val runtimeVersion =

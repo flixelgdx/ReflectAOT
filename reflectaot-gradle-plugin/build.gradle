@@ -11,8 +11,18 @@ def embedReflectAOTRuntime = tasks.register('embedReflectAOTRuntime', Copy) {
   into(layout.buildDirectory.dir('generatedReflectResources/META-INF/reflectaot'))
 }
 
+def embedReflectAOTRuntimeSources = tasks.register('embedReflectAOTRuntimeSources', Copy) {
+  dependsOn ':reflectaot-runtime:sourcesJar'
+  from(project(':reflectaot-runtime').tasks.named('sourcesJar'))
+  rename { 'reflectaot-runtime-embedded-sources.jar' }
+  into(layout.buildDirectory.dir('generatedReflectResources/META-INF/reflectaot'))
+}
+
 sourceSets.main.resources.srcDir(layout.buildDirectory.dir('generatedReflectResources'))
-tasks.named('processResources', ProcessResources).configure { dependsOn embedReflectAOTRuntime }
+tasks.named('processResources', ProcessResources).configure {
+  dependsOn embedReflectAOTRuntime
+  dependsOn embedReflectAOTRuntimeSources
+}
 
 kotlin {
   jvmToolchain(17)
@@ -29,6 +39,7 @@ tasks.named('javadoc', Javadoc).configure {
 
 tasks.named('sourcesJar', Jar).configure {
   dependsOn(embedReflectAOTRuntime)
+  dependsOn(embedReflectAOTRuntimeSources)
 }
 
 dependencies {

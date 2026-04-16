@@ -11,10 +11,12 @@ object JavaMirrorEmitter {
   fun emit(
     javaOut: File,
     types: List<TypeIntrospection.IntrospectedType>,
+    methodBindings: List<MethodIdBinding>,
+    roots: Collection<File>,
   ) {
     val sorted = types.sortedBy { it.internalName }
     for (t in sorted) {
-      emitAccessor(javaOut, t)
+      emitAccessor(javaOut, t, methodBindings, roots)
     }
     emitRegistry(javaOut, sorted)
   }
@@ -27,6 +29,8 @@ object JavaMirrorEmitter {
   private fun emitAccessor(
     javaOut: File,
     t: TypeIntrospection.IntrospectedType,
+    methodBindings: List<MethodIdBinding>,
+    roots: Collection<File>,
   ) {
     val fq = fqcn(t.internalName)
     val accessFq = accessClassFqcn(t.internalName)
@@ -48,6 +52,7 @@ object JavaMirrorEmitter {
     sb.append(renderGetProperty(fq, t))
     sb.append(renderSetProperty(fq, t))
     sb.append(renderFields(fq, t))
+    sb.append(renderCallMethod(fq, t, methodBindings, roots))
 
     sb.append("}\n")
 
@@ -239,6 +244,101 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
+  private fun renderCallMethod(
+    fq: String,
+    t: TypeIntrospection.IntrospectedType,
+    allBindings: List<MethodIdBinding>,
+    roots: Collection<File>,
+  ): String {
+    val bindings =
+      allBindings
+        .filter { JvmSubtype.isSubtype(t.internalName, it.userClassInternal, roots) }
+        .sortedBy { it.id }
+    val sb = StringBuilder()
+    sb.append("  public static Object callMethod(").append(fq).append(" o, int methodId, java.util.List<?> args) {\n")
+    if (bindings.isEmpty()) {
+      sb.append(
+        "    throw new IllegalArgumentException(\"No Reflect.methodId bindings for " + fq + "\");\n",
+      )
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    sb.append("    switch (methodId) {\n")
+    for (b in bindings) {
+      sb.append("      case ").append(b.id).append(": {\n")
+      val argTypes = Type.getArgumentTypes(b.descriptor)
+      for (i in argTypes.indices) {
+        sb.append("        ").append(argLocalType(argTypes[i])).append(" a").append(i).append(" = ")
+        sb.append(unboxArgFromList("args.get(" + i + ")", argTypes[i])).append(";\n")
+      }
+      val ret = Type.getReturnType(b.descriptor)
+      val argsCsv = (argTypes.indices).joinToString(", ") { "a$it" }
+      if (ret == Type.VOID_TYPE) {
+        sb.append("        o.").append(b.name).append("(").append(argsCsv).append(");\n")
+        sb.append("        return null;\n")
+      } else {
+        sb.append("        return ").append(boxRead("o." + b.name + "(" + argsCsv + ")", ret.descriptor)).append(";\n")
+      }
+      sb.append("      }\n")
+    }
+    sb.append("      default:\n")
+    sb.append("        throw new IllegalArgumentException(\"Unknown method id for " + fq + "\");\n")
+    sb.append("    }\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun argLocalType(t: Type): String =
+    when (t.sort) {
+      Type.BOOLEAN -> "boolean"
+      Type.CHAR -> "char"
+      Type.BYTE -> "byte"
+      Type.SHORT -> "short"
+      Type.INT -> "int"
+      Type.FLOAT -> "float"
+      Type.LONG -> "long"
+      Type.DOUBLE -> "double"
+      Type.OBJECT, Type.ARRAY -> fqDesc(t.descriptor)
+      else -> "java.lang.Object"
+    }
+
+  private fun unboxArgFromList(
+    expr: String,
+    t: Type,
+  ): String =
+    when (t.sort) {
+      Type.BOOLEAN -> "((Boolean) " + expr + ").booleanValue()"
+      Type.CHAR -> "(char) ((Character) " + expr + ").charValue()"
+      Type.BYTE -> "((Number) " + expr + ").byteValue()"
+      Type.SHORT -> "((Number) " + expr + ").shortValue()"
+      Type.INT -> "((Number) " + expr + ").intValue()"
+      Type.FLOAT -> "((Number) " + expr + ").floatValue()"
+      Type.LONG -> "((Number) " + expr + ").longValue()"
+      Type.DOUBLE -> "((Number) " + expr + ").doubleValue()"
+      Type.OBJECT, Type.ARRAY -> "(" + fqDesc(t.descriptor) + ") " + expr
+      else -> "(" + fqDesc(t.descriptor) + ") " + expr
+    }
+
+  private fun renderRegistryCallMethod(sorted: List<TypeIntrospection.IntrospectedType>): String {
+    val sb = StringBuilder()
+    sb.append("  public Object callMethod(Object o, int methodId, java.util.List<?> args) {\n")
+    if (sorted.isEmpty()) {
+      sb.append("    return ReflectAOTDefaultDispatch.callMethod(o, methodId, args);\n")
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    for (t in sorted) {
+      val fq = fqcn(t.internalName)
+      val acc = accessClassFqcn(t.internalName)
+      sb.append("    if (o instanceof ").append(fq).append(") {\n")
+      sb.append("      return ").append(acc).append(".callMethod((").append(fq).append(") o, methodId, args);\n")
+      sb.append("    }\n")
+    }
+    sb.append("    return ReflectAOTDefaultDispatch.callMethod(o, methodId, args);\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
   private fun emitRegistry(
     javaOut: File,
     sorted: List<TypeIntrospection.IntrospectedType>,
@@ -264,9 +364,7 @@ object JavaMirrorEmitter {
     sb.append("  public boolean isFunction(Object v) { return ReflectAOTDefaultDispatch.isFunction(v); }\n")
     sb.append("  public boolean isObject(Object v) { return ReflectAOTDefaultDispatch.isObject(v); }\n")
     sb.append("  public boolean isEnumValue(Object v) { return ReflectAOTDefaultDispatch.isEnumValue(v); }\n")
-    sb.append(
-      "  public Object callMethod(Object o, int methodId, List<?> args) { return ReflectAOTDefaultDispatch.callMethod(o, methodId, args); }\n",
-    )
+    sb.append(renderRegistryCallMethod(sorted))
     sb.append("  public Object copy(Object o) { return ReflectAOTDefaultDispatch.copy(o); }\n\n")
 
     sb.append(renderRegistryDispatch("hasField", "boolean", sorted, "hasField"))

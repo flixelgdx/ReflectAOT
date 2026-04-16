@@ -74,6 +74,20 @@ public final class Reflect {
   }
 
   /**
+   * Same as {@link #compareMethods(int, int)} using {@link ReflectMethodId} tokens.
+   *
+   * @param methodIdA first method identifier
+   * @param methodIdB second method identifier
+   * @return {@code true} when both denote the same resolved method target
+   */
+  public static boolean compareMethods(ReflectMethodId methodIdA, ReflectMethodId methodIdB) {
+    if (methodIdA == null || methodIdB == null) {
+      throw new IllegalArgumentException("ReflectMethodId must not be null");
+    }
+    return compareMethods(methodIdA.id(), methodIdB.id());
+  }
+
+  /**
    * Creates a shallow copy of the source object.
    *
    * <p>Implementations typically require a no-argument constructor and then copy non-static field
@@ -138,6 +152,22 @@ public final class Reflect {
   }
 
   /**
+   * Same as {@link #callMethod(Object, int, List)} using a {@link ReflectMethodId} from {@link
+   * #methodId(Class, String, String)} (no primitive {@code int} cast at call sites).
+   *
+   * @param o receiver object
+   * @param methodId build-resolved method token
+   * @param args invocation arguments (may be empty, never {@code null} after normalization)
+   * @return invocation result, or {@code null} for void methods when specialized
+   */
+  public static Object callMethod(Object o, ReflectMethodId methodId, List<?> args) {
+    if (methodId == null) {
+      throw new IllegalArgumentException("methodId");
+    }
+    return callMethod(o, methodId.id(), args);
+  }
+
+  /**
    * Same as {@link #callMethod(Object, int, List)} using a varargs array.
    *
    * @param o receiver object
@@ -152,6 +182,47 @@ public final class Reflect {
     List<Object> list = new ArrayList<Object>(args.length);
     Collections.addAll(list, args);
     return callMethod(o, methodId, list);
+  }
+
+  /**
+   * Same as {@link #callMethod(Object, int, Object...)} using {@link ReflectMethodId}.
+   *
+   * @param o receiver object
+   * @param methodId build-resolved method token
+   * @param args invocation arguments (may be {@code null} or empty)
+   * @return invocation result, or {@code null} for void methods when specialized
+   */
+  public static Object callMethod(Object o, ReflectMethodId methodId, Object... args) {
+    if (methodId == null) {
+      throw new IllegalArgumentException("methodId");
+    }
+    return callMethod(o, methodId.id(), args);
+  }
+
+  /**
+   * Returns a build-validated method token for {@link #callMethod(Object, ReflectMethodId,
+   * Object...)}.
+   *
+   * <p>The {@code clazz}, {@code name}, and {@code descriptor} arguments must be <em>compile-time
+   * constants</em> in user bytecode (string literals and {@code SomeType.class}) so the Gradle
+   * generator can resolve the member and assign a stable id.
+   *
+   * @param clazz receiver class literal (for example {@code FlixelSprite.class})
+   * @param name JVM method name (for example {@code "changeX"})
+   * @param descriptor JVM method descriptor (for example {@code "(F)V"})
+   * @return opaque method token for {@link #callMethod(Object, ReflectMethodId, Object...)}
+   */
+  public static ReflectMethodId methodId(Class<?> clazz, String name, String descriptor) {
+    if (clazz == null) {
+      throw new IllegalArgumentException("clazz");
+    }
+    if (name == null) {
+      throw new IllegalArgumentException("name");
+    }
+    if (descriptor == null) {
+      throw new IllegalArgumentException("descriptor");
+    }
+    return ReflectAOTServices.resolveMethodId(clazz, name, descriptor);
   }
 
   /**

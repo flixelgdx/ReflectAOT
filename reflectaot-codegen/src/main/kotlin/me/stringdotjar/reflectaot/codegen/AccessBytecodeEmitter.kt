@@ -24,6 +24,7 @@ object AccessBytecodeEmitter {
     type: TypeIntrospection.IntrospectedType,
     outputDir: File,
     roots: Collection<File>,
+    methodBindings: List<MethodIdBinding>,
   ) {
     val ownerType = Type.getObjectType(type.internalName)
     val accessInternal = accessInternalName(type.internalName)
@@ -52,6 +53,7 @@ object AccessBytecodeEmitter {
     emitGetProperty(type, cw, ownerType)
     emitSetProperty(type, cw, ownerType)
     emitFields(type, cw, ownerType)
+    emitCallMethod(type, cw, ownerType, methodBindings, roots)
 
     cw.visitEnd()
     val out = File(outputDir, "$accessInternal.class")
@@ -289,6 +291,64 @@ object AccessBytecodeEmitter {
       )
     }
     ga.throwException(Type.getType(IllegalArgumentException::class.java), "Unknown property")
+    ga.endMethod()
+  }
+
+  private fun emitCallMethod(
+    type: TypeIntrospection.IntrospectedType,
+    cw: ClassWriter,
+    ownerType: Type,
+    allBindings: List<MethodIdBinding>,
+    roots: Collection<File>,
+  ) {
+    val bindings =
+      allBindings
+        .filter { JvmSubtype.isSubtype(type.internalName, it.userClassInternal, roots) }
+        .sortedBy { it.id }
+    val m =
+      AsmMethod(
+        "callMethod",
+        Type.getType(Object::class.java),
+        arrayOf(ownerType, Type.INT_TYPE, LIST_TYPE),
+      )
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
+    ga.visitCode()
+    if (bindings.isEmpty()) {
+      ga.throwException(
+        Type.getType(IllegalArgumentException::class.java),
+        "No Reflect.methodId bindings for " + type.internalName.replace('/', '.'),
+      )
+      ga.endMethod()
+      return
+    }
+    for (b in bindings) {
+      val next = ga.newLabel()
+      ga.loadArg(1)
+      ga.push(b.id)
+      ga.ifCmp(Type.INT_TYPE, GeneratorAdapter.NE, next)
+      ga.loadArg(0)
+      val argTypes = Type.getArgumentTypes(b.descriptor)
+      for (i in argTypes.indices) {
+        ga.loadArg(2)
+        ga.push(i)
+        ga.invokeInterface(LIST_TYPE, AsmMethod("get", OBJECT_TYPE, arrayOf(Type.INT_TYPE)))
+        ga.unbox(argTypes[i])
+      }
+      val declaring = Type.getObjectType(b.declaringInternal)
+      ga.invokeVirtual(declaring, AsmMethod(b.name, b.descriptor))
+      val ret = Type.getReturnType(b.descriptor)
+      if (ret == Type.VOID_TYPE) {
+        ga.visitInsn(Opcodes.ACONST_NULL)
+      } else {
+        ga.box(ret)
+      }
+      ga.returnValue()
+      ga.mark(next)
+    }
+    ga.throwException(
+      Type.getType(IllegalArgumentException::class.java),
+      "Unknown method id for " + type.internalName.replace('/', '.'),
+    )
     ga.endMethod()
   }
 

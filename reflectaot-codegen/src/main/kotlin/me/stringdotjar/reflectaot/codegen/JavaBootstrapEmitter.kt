@@ -20,6 +20,7 @@ object JavaBootstrapEmitter {
 
           static {
               ReflectAOTServices.install(new ReflectAOTRegistry());
+              ReflectAOTServices.installMethodIds(new ReflectAOTMethodIdTable());
           }
 
           private ReflectAOTBootstrap() {

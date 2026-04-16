@@ -66,7 +66,6 @@ object RegistryBytecodeEmitter {
     emitDefaultBridge(cw, M_IS_FUNCTION, DEFAULT_TYPE, M_IS_FUNCTION)
     emitDefaultBridge(cw, M_IS_OBJECT, DEFAULT_TYPE, M_IS_OBJECT)
     emitDefaultBridge(cw, M_IS_ENUM, DEFAULT_TYPE, M_IS_ENUM)
-    emitDefaultBridge(cw, M_CALL_METHOD, DEFAULT_TYPE, M_CALL_METHOD)
     emitDefaultBridge(cw, M_COPY, DEFAULT_TYPE, M_COPY)
 
     emitDispatchObjectStringBool(cw, M_HAS_FIELD, sorted) { t ->
@@ -98,6 +97,8 @@ object RegistryBytecodeEmitter {
       val owner = Type.getObjectType(t.internalName)
       AsmMethod("fields", STRING_ARRAY_TYPE, arrayOf(owner))
     }
+
+    emitDispatchObjectIntObject(cw, sorted)
 
     cw.visitEnd()
     val out = File(outputDir, "$REGISTRY_INTERNAL.class")
@@ -229,6 +230,42 @@ object RegistryBytecodeEmitter {
       Type.getType(UnsupportedOperationException::class.java),
       "Reflect.setField not specialized for receiver",
     )
+    ga.endMethod()
+  }
+
+  private fun emitDispatchObjectIntObject(
+    cw: ClassWriter,
+    sorted: List<TypeIntrospection.IntrospectedType>,
+  ) {
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, M_CALL_METHOD, null, null, cw)
+    ga.visitCode()
+    if (sorted.isEmpty()) {
+      ga.invokeStatic(DEFAULT_TYPE, M_CALL_METHOD)
+      ga.returnValue()
+      ga.endMethod()
+      return
+    }
+    ga.loadArg(0)
+    for (t in sorted) {
+      val owner = Type.getObjectType(t.internalName)
+      val access = Type.getObjectType(AccessBytecodeEmitter.accessInternalName(t.internalName))
+      val next = ga.newLabel()
+      ga.dup()
+      ga.instanceOf(owner)
+      ga.ifZCmp(GeneratorAdapter.EQ, next)
+      ga.checkCast(owner)
+      ga.loadArg(1)
+      ga.loadArg(2)
+      ga.invokeStatic(
+        access,
+        AsmMethod("callMethod", OBJECT_TYPE, arrayOf(owner, INT_TYPE, LIST_TYPE)),
+      )
+      ga.returnValue()
+      ga.mark(next)
+    }
+    ga.pop()
+    ga.invokeStatic(DEFAULT_TYPE, M_CALL_METHOD)
+    ga.returnValue()
     ga.endMethod()
   }
 
