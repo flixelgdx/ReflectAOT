@@ -36,6 +36,7 @@ object ReflectUsageScanner {
       "setProperty",
       "hasField",
       "fields",
+      "callMethod",
     )
 
   data class CallSite(
@@ -157,6 +158,9 @@ object ReflectUsageScanner {
     invokeIndex: Int,
     reflectCall: MethodInsnNode,
   ): String? {
+    if (reflectCall.name == "callMethod") {
+      return null
+    }
     var p = invokeIndex - 1
     p = skipNonInstructionsBackward(insns, p)
     if (p < 0) {

@@ -22,6 +22,17 @@ tasks.register('uploadToMavenLocal') {
   )
 }
 
+/** JitPack and local installs run {@code ./gradlew install} by convention. */
+tasks.register('install') {
+  group = 'publishing'
+  description = 'Publishes all library artifacts to the local Maven repository (used by JitPack).'
+  dependsOn(
+    ':reflectaot-runtime:publishToMavenLocal',
+    ':reflectaot-codegen:publishToMavenLocal',
+    ':reflectaot-gradle-plugin:publishToMavenLocal',
+  )
+}
+
 if (findProperty('reflectaot.publish.central') == 'true') {
   logger.lifecycle(
     'reflectaot.publish.central=true: before publishing to Maven Central, wire signing + Central Portal/OSSRH ' +

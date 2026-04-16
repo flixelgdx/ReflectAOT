@@ -11,7 +11,18 @@ import java.util.List;
  */
 public final class ReflectAOTDefaultDispatch {
 
+  private static final String[] EMPTY_STRING_ARRAY = new String[0];
+
   private ReflectAOTDefaultDispatch() {}
+
+  /**
+   * Shared empty {@code String[]} for {@link Reflect#fields(Object)} when the runtime returns null.
+   *
+   * @return a shared zero-length {@code String[]} instance
+   */
+  public static String[] emptyStringArray() {
+    return EMPTY_STRING_ARRAY;
+  }
 
   /**
    * @param a first value
@@ -47,12 +58,12 @@ public final class ReflectAOTDefaultDispatch {
   }
 
   /**
-   * @param f1 first token
-   * @param f2 second token
-   * @return {@code true} when the two tokens are identical (reference equality)
+   * @param methodIdA first build-time method identifier
+   * @param methodIdB second build-time method identifier
+   * @return {@code true} when the two identifiers are equal
    */
-  public static boolean compareMethods(Object f1, Object f2) {
-    return f1 == f2;
+  public static boolean compareMethods(int methodIdA, int methodIdB) {
+    return methodIdA == methodIdB;
   }
 
   /**
@@ -84,20 +95,12 @@ public final class ReflectAOTDefaultDispatch {
   }
 
   /**
-   * @param f opaque token
-   * @return varargs wrapper (not implemented in v1)
-   */
-  public static Object makeVarArgs(Object f) {
-    throw new UnsupportedOperationException("makeVarArgs not specialized");
-  }
-
-  /**
    * @param o target object
-   * @param name field name
+   * @param methodId build-time method identifier
    * @param args call arguments
    * @return invocation result
    */
-  public static Object callMethod(Object o, Object name, List<?> args) {
+  public static Object callMethod(Object o, int methodId, List<?> args) {
     throw new UnsupportedOperationException("callMethod not specialized for " + safe(o));
   }
 
@@ -107,15 +110,6 @@ public final class ReflectAOTDefaultDispatch {
    */
   public static Object copy(Object o) {
     throw new UnsupportedOperationException("copy not specialized for " + safe(o));
-  }
-
-  /**
-   * @param o target object
-   * @param name field name
-   * @return {@code false} (JVM anonymous structures are not modeled here)
-   */
-  public static boolean deleteField(Object o, String name) {
-    return false;
   }
 
   private static String safe(Object o) {

@@ -10,6 +10,11 @@ kotlin {
 
 java {
  withSourcesJar()
+ withJavadocJar()
+}
+
+tasks.named('javadoc', Javadoc).configure {
+ options.encoding = 'UTF-8'
 }
 
 dependencies {

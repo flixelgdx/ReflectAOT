@@ -1,6 +1,5 @@
 package me.stringdotjar.reflectaot;
 
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -35,23 +34,18 @@ public final class ReflectAOTStubRuntime implements ReflectAOTRuntime {
   }
 
   @Override
-  public Object callMethod(Object o, Object func, List<?> args) {
+  public Object callMethod(Object o, int methodId, List<?> args) {
     throw new UnsupportedOperationException("callMethod not specialized");
   }
 
   @Override
-  public List<String> fields(Object o) {
-    return Collections.emptyList();
+  public String[] fields(Object o) {
+    return ReflectAOTDefaultDispatch.emptyStringArray();
   }
 
   @Override
   public Object copy(Object o) {
     throw new UnsupportedOperationException("copy not specialized");
-  }
-
-  @Override
-  public boolean deleteField(Object o, String name) {
-    return false;
   }
 
   @Override
@@ -78,8 +72,8 @@ public final class ReflectAOTStubRuntime implements ReflectAOTRuntime {
   }
 
   @Override
-  public boolean compareMethods(Object f1, Object f2) {
-    return f1 == f2;
+  public boolean compareMethods(int methodIdA, int methodIdB) {
+    return methodIdA == methodIdB;
   }
 
   @Override
@@ -94,11 +88,6 @@ public final class ReflectAOTStubRuntime implements ReflectAOTRuntime {
             || v instanceof Number
             || v instanceof Character
             || v instanceof String);
-  }
-
-  @Override
-  public Object makeVarArgs(Object f) {
-    throw new UnsupportedOperationException("makeVarArgs not specialized");
   }
 
   @Override

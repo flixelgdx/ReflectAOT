@@ -1,0 +1,5 @@
+# https://docs.jitpack.io/
+jdk:
+  - openjdk17
+install:
+  - ./gradlew install -x test --no-daemon --stacktrace

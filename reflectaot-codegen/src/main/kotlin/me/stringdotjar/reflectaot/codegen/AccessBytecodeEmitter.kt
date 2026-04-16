@@ -14,8 +14,8 @@ object AccessBytecodeEmitter {
 
   private val OBJECT_TYPE = Type.getType(Object::class.java)
   private val STRING_TYPE = Type.getType(String::class.java)
+  private val STRING_ARRAY_TYPE = Type.getType("[Ljava/lang/String;")
   private val LIST_TYPE = Type.getType(java.util.List::class.java)
-  private val ARRAY_LIST_TYPE = Type.getType(java.util.ArrayList::class.java)
 
   fun accessInternalName(typeInternal: String): String =
     "me/stringdotjar/reflectaot/generated/access/" + typeInternal.replace('/', '_') + "ReflectAOT"
@@ -297,21 +297,21 @@ object AccessBytecodeEmitter {
     cw: ClassWriter,
     ownerType: Type,
   ) {
-    val m = AsmMethod("fields", LIST_TYPE, arrayOf(ownerType))
+    val m = AsmMethod("fields", STRING_ARRAY_TYPE, arrayOf(ownerType))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     val names = LinkedHashSet<String>()
     type.fields.keys.forEach { names.add(it) }
     type.properties.forEach { names.add(it.name) }
 
-    ga.newInstance(ARRAY_LIST_TYPE)
-    ga.dup()
-    ga.invokeConstructor(ARRAY_LIST_TYPE, AsmMethod("<init>", "()V"))
-    for (n in names) {
+    val nameList = names.toList()
+    ga.push(nameList.size)
+    ga.newArray(STRING_TYPE)
+    for (i in nameList.indices) {
       ga.dup()
-      ga.push(n)
-      ga.invokeVirtual(ARRAY_LIST_TYPE, AsmMethod("add", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE)))
-      ga.pop()
+      ga.push(i)
+      ga.push(nameList[i])
+      ga.arrayStore(STRING_TYPE)
     }
     ga.returnValue()
     ga.endMethod()

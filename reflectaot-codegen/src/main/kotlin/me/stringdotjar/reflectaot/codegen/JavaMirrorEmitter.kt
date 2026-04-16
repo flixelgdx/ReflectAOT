@@ -220,12 +220,21 @@ object JavaMirrorEmitter {
     t.fields.keys.forEach { names.add(it) }
     t.properties.forEach { names.add(it.name) }
     val sb = StringBuilder()
-    sb.append("  public static List<String> fields(").append(fq).append(" o) {\n")
-    sb.append("    ArrayList<String> out = new ArrayList<String>();\n")
-    for (n in names) {
-      sb.append("    out.add(\"").append(escape(n)).append("\");\n")
+    sb.append("  public static String[] fields(").append(fq).append(" o) {\n")
+    if (names.isEmpty()) {
+      sb.append("    return me.stringdotjar.reflectaot.ReflectAOTDefaultDispatch.emptyStringArray();\n")
+    } else {
+      sb.append("    return new String[] {\n")
+      val it = names.iterator()
+      while (it.hasNext()) {
+        sb.append("      \"").append(escape(it.next())).append("\"")
+        if (it.hasNext()) {
+          sb.append(",")
+        }
+        sb.append("\n")
+      }
+      sb.append("    };\n")
     }
-    sb.append("    return out;\n")
     sb.append("  }\n")
     return sb.toString()
   }
@@ -239,7 +248,6 @@ object JavaMirrorEmitter {
     dir.mkdirs()
     val sb = StringBuilder()
     sb.append("package ").append(pkg).append(";\n\n")
-    sb.append("import java.util.Collections;\n")
     sb.append("import java.util.List;\n")
     sb.append("import me.stringdotjar.reflectaot.ReflectAOTDefaultDispatch;\n")
     sb.append("import me.stringdotjar.reflectaot.ReflectAOTRuntime;\n")
@@ -251,19 +259,15 @@ object JavaMirrorEmitter {
 
     sb.append("  public int compare(Object a, Object b) { return ReflectAOTDefaultDispatch.compare(a, b); }\n")
     sb.append(
-      "  public boolean compareMethods(Object f1, Object f2) { return ReflectAOTDefaultDispatch.compareMethods(f1, f2); }\n",
+      "  public boolean compareMethods(int methodIdA, int methodIdB) { return ReflectAOTDefaultDispatch.compareMethods(methodIdA, methodIdB); }\n",
     )
     sb.append("  public boolean isFunction(Object v) { return ReflectAOTDefaultDispatch.isFunction(v); }\n")
     sb.append("  public boolean isObject(Object v) { return ReflectAOTDefaultDispatch.isObject(v); }\n")
-    sb.append("  public Object makeVarArgs(Object f) { return ReflectAOTDefaultDispatch.makeVarArgs(f); }\n")
     sb.append("  public boolean isEnumValue(Object v) { return ReflectAOTDefaultDispatch.isEnumValue(v); }\n")
     sb.append(
-      "  public Object callMethod(Object o, Object func, List<?> args) { return ReflectAOTDefaultDispatch.callMethod(o, func, args); }\n",
+      "  public Object callMethod(Object o, int methodId, List<?> args) { return ReflectAOTDefaultDispatch.callMethod(o, methodId, args); }\n",
     )
-    sb.append("  public Object copy(Object o) { return ReflectAOTDefaultDispatch.copy(o); }\n")
-    sb.append(
-      "  public boolean deleteField(Object o, String name) { return ReflectAOTDefaultDispatch.deleteField(o, name); }\n\n",
-    )
+    sb.append("  public Object copy(Object o) { return ReflectAOTDefaultDispatch.copy(o); }\n\n")
 
     sb.append(renderRegistryDispatch("hasField", "boolean", sorted, "hasField"))
     sb.append(renderRegistryDispatch("field", "Object", sorted, "field"))
@@ -373,9 +377,9 @@ object JavaMirrorEmitter {
 
   private fun renderRegistryFields(sorted: List<TypeIntrospection.IntrospectedType>): String {
     val sb = StringBuilder()
-    sb.append("  public List<String> fields(Object o) {\n")
+    sb.append("  public String[] fields(Object o) {\n")
     if (sorted.isEmpty()) {
-      sb.append("    return Collections.emptyList();\n")
+      sb.append("    return me.stringdotjar.reflectaot.ReflectAOTDefaultDispatch.emptyStringArray();\n")
       sb.append("  }\n")
       return sb.toString()
     }
@@ -391,7 +395,7 @@ object JavaMirrorEmitter {
         .append(") o);\n")
       sb.append("    }\n")
     }
-    sb.append("    return Collections.emptyList();\n")
+    sb.append("    return me.stringdotjar.reflectaot.ReflectAOTDefaultDispatch.emptyStringArray();\n")
     sb.append("  }\n")
     return sb.toString()
   }

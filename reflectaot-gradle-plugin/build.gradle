@@ -18,6 +18,19 @@ kotlin {
   jvmToolchain(17)
 }
 
+java {
+  withSourcesJar()
+  withJavadocJar()
+}
+
+tasks.named('javadoc', Javadoc).configure {
+  options.encoding = 'UTF-8'
+}
+
+tasks.named('sourcesJar', Jar).configure {
+  dependsOn(embedReflectAOTRuntime)
+}
+
 dependencies {
   implementation project(':reflectaot-codegen')
   implementation gradleApi()

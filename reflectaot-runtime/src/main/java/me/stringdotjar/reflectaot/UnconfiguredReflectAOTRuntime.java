@@ -38,12 +38,12 @@ enum UnconfiguredReflectAOTRuntime implements ReflectAOTRuntime {
   }
 
   @Override
-  public Object callMethod(Object o, Object func, List<?> args) {
+  public Object callMethod(Object o, int methodId, List<?> args) {
     throw nx();
   }
 
   @Override
-  public List<String> fields(Object o) {
+  public String[] fields(Object o) {
     throw nx();
   }
 
@@ -53,17 +53,12 @@ enum UnconfiguredReflectAOTRuntime implements ReflectAOTRuntime {
   }
 
   @Override
-  public boolean deleteField(Object o, String name) {
-    throw nx();
-  }
-
-  @Override
   public int compare(Object a, Object b) {
     throw nx();
   }
 
   @Override
-  public boolean compareMethods(Object f1, Object f2) {
+  public boolean compareMethods(int methodIdA, int methodIdB) {
     throw nx();
   }
 
@@ -74,11 +69,6 @@ enum UnconfiguredReflectAOTRuntime implements ReflectAOTRuntime {
 
   @Override
   public boolean isObject(Object v) {
-    throw nx();
-  }
-
-  @Override
-  public Object makeVarArgs(Object f) {
     throw nx();
   }
 

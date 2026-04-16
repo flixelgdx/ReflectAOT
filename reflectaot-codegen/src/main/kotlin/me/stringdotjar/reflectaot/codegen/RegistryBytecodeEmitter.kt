@@ -16,7 +16,9 @@ object RegistryBytecodeEmitter {
 
   private val OBJECT_TYPE = Type.getType(Object::class.java)
   private val STRING_TYPE = Type.getType(String::class.java)
+  private val STRING_ARRAY_TYPE = Type.getType("[Ljava/lang/String;")
   private val LIST_TYPE = Type.getType(java.util.List::class.java)
+  private val INT_TYPE = Type.INT_TYPE
   private val RUNTIME_TYPE = Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTRuntime")
   private val DEFAULT_TYPE = Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTDefaultDispatch")
 
@@ -26,15 +28,13 @@ object RegistryBytecodeEmitter {
   private val M_GET_PROPERTY = AsmMethod("getProperty", OBJECT_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE))
   private val M_SET_PROPERTY =
     AsmMethod("setProperty", Type.VOID_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE, OBJECT_TYPE))
-  private val M_CALL_METHOD = AsmMethod("callMethod", OBJECT_TYPE, arrayOf(OBJECT_TYPE, OBJECT_TYPE, LIST_TYPE))
-  private val M_FIELDS = AsmMethod("fields", LIST_TYPE, arrayOf(OBJECT_TYPE))
+  private val M_CALL_METHOD = AsmMethod("callMethod", OBJECT_TYPE, arrayOf(OBJECT_TYPE, INT_TYPE, LIST_TYPE))
+  private val M_FIELDS = AsmMethod("fields", STRING_ARRAY_TYPE, arrayOf(OBJECT_TYPE))
   private val M_COPY = AsmMethod("copy", OBJECT_TYPE, arrayOf(OBJECT_TYPE))
-  private val M_DELETE_FIELD = AsmMethod("deleteField", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE))
   private val M_COMPARE = AsmMethod("compare", Type.INT_TYPE, arrayOf(OBJECT_TYPE, OBJECT_TYPE))
-  private val M_COMPARE_METHODS = AsmMethod("compareMethods", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE, OBJECT_TYPE))
+  private val M_COMPARE_METHODS = AsmMethod("compareMethods", Type.BOOLEAN_TYPE, arrayOf(INT_TYPE, INT_TYPE))
   private val M_IS_FUNCTION = AsmMethod("isFunction", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE))
   private val M_IS_OBJECT = AsmMethod("isObject", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE))
-  private val M_MAKE_VAR_ARGS = AsmMethod("makeVarArgs", OBJECT_TYPE, arrayOf(OBJECT_TYPE))
   private val M_IS_ENUM = AsmMethod("isEnumValue", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE))
 
   fun emit(
@@ -66,10 +66,8 @@ object RegistryBytecodeEmitter {
     emitDefaultBridge(cw, M_IS_FUNCTION, DEFAULT_TYPE, M_IS_FUNCTION)
     emitDefaultBridge(cw, M_IS_OBJECT, DEFAULT_TYPE, M_IS_OBJECT)
     emitDefaultBridge(cw, M_IS_ENUM, DEFAULT_TYPE, M_IS_ENUM)
-    emitDefaultBridge(cw, M_MAKE_VAR_ARGS, DEFAULT_TYPE, M_MAKE_VAR_ARGS)
     emitDefaultBridge(cw, M_CALL_METHOD, DEFAULT_TYPE, M_CALL_METHOD)
     emitDefaultBridge(cw, M_COPY, DEFAULT_TYPE, M_COPY)
-    emitDefaultBridge(cw, M_DELETE_FIELD, DEFAULT_TYPE, M_DELETE_FIELD)
 
     emitDispatchObjectStringBool(cw, M_HAS_FIELD, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
@@ -96,9 +94,9 @@ object RegistryBytecodeEmitter {
       AsmMethod("setProperty", Type.VOID_TYPE, arrayOf(owner, STRING_TYPE, OBJECT_TYPE))
     }
 
-    emitDispatchObjectList(cw, M_FIELDS, sorted) { t ->
+    emitDispatchObjectStringArray(cw, M_FIELDS, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
-      AsmMethod("fields", LIST_TYPE, arrayOf(owner))
+      AsmMethod("fields", STRING_ARRAY_TYPE, arrayOf(owner))
     }
 
     cw.visitEnd()
@@ -234,7 +232,7 @@ object RegistryBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitDispatchObjectList(
+  private fun emitDispatchObjectStringArray(
     cw: ClassWriter,
     ifaceMethod: AsmMethod,
     sorted: List<TypeIntrospection.IntrospectedType>,
@@ -244,8 +242,8 @@ object RegistryBytecodeEmitter {
     ga.visitCode()
     if (sorted.isEmpty()) {
       ga.invokeStatic(
-        Type.getType(java.util.Collections::class.java),
-        AsmMethod("emptyList", LIST_TYPE, arrayOf()),
+        Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTDefaultDispatch"),
+        AsmMethod("emptyStringArray", STRING_ARRAY_TYPE, arrayOf()),
       )
       ga.returnValue()
       ga.endMethod()
@@ -266,8 +264,8 @@ object RegistryBytecodeEmitter {
     }
     ga.pop()
     ga.invokeStatic(
-      Type.getType(java.util.Collections::class.java),
-      AsmMethod("emptyList", LIST_TYPE, arrayOf()),
+      Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTDefaultDispatch"),
+      AsmMethod("emptyStringArray", STRING_ARRAY_TYPE, arrayOf()),
     )
     ga.returnValue()
     ga.endMethod()

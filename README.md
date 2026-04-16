@@ -1,10 +1,10 @@
 # ReflectAOT
 
-ReflectAOT is a small JVM ecosystem for Haxe-style `Reflect` usage without `java.lang.reflect`.
+ReflectAOT is a small JVM ecosystem for build-time specialized `Reflect`-style APIs without `java.lang.reflect`.
 
 It ships:
 
-- `reflectaot-runtime`: a hand-written `Reflect` API modeled after [Haxe Reflect](https://api.haxe.org/Reflect.html).
+- `reflectaot-runtime`: a hand-written `Reflect` API for field, property, and method dispatch (see class Javadoc).
 - `reflectaot-codegen`: ASM (and optional Java source) emitters plus bytecode scanning utilities.
 - `reflectaot-gradle-plugin`: applies the build pipeline, injects the runtime, scans bytecode, and generates dispatch.
 
@@ -22,6 +22,12 @@ repositories { mavenCentral() }
 ```
 
 The plugin adds the runtime implementation dependency for you (it embeds `reflectaot-runtime` into the plugin jar for local resolution without an extra Maven coordinate).
+
+Published Maven coordinates include **`-sources`** and **`-javadoc`** jars for IDE “Download sources/documentation” when you depend on `reflectaot-runtime`, `reflectaot-codegen`, or the plugin marker from Maven Local / Central.
+
+### JitPack
+
+When the repository is public, [JitPack](https://jitpack.io/) can build from tags or commits using [`jitpack.yml`](jitpack.yml) at the repository root. The `install` step runs `./gradlew install`, which publishes all modules to the local Maven repository for JitPack to pick up.
 
 ### Output modes
 
@@ -55,7 +61,7 @@ After `compileJava` (and `compileKotlin` when the Kotlin JVM plugin is present),
 - compiled project classes
 - `compileClasspath` entries (directories and JARs)
 
-It looks for `invokestatic` calls into `me.stringdotjar.reflectaot.Reflect` for a focused set of members (`field`, `setField`, `getProperty`, `setProperty`, `hasField`, `fields`).
+It looks for `invokestatic` calls into `me.stringdotjar.reflectaot.Reflect` for a focused set of members (`field`, `setField`, `getProperty`, `setProperty`, `hasField`, `fields`, `callMethod`).
 
 When the receiver type is visible in bytecode as a concrete class, ReflectAOT generates per-type accessors plus a `ReflectAOTRegistry` implementation.
 
@@ -90,7 +96,7 @@ ReflectASM popularized fast, specialized accessors.
 ReflectAOT is similar in spirit (specialized accessors), but differs in major ways:
 
 - ReflectAOT is primarily **build-time** emission (ASM `.class`), not runtime bytecode weaving in the application.
-- ReflectAOT targets a **Haxe-shaped `Reflect` API** and a **no `java.lang.reflect`** rule across runtime + generated code.
+- ReflectAOT targets a **compact `Reflect` API** and a **no `java.lang.reflect`** rule across runtime + generated code.
 - ReflectAOT trades away some "magic" (fully dynamic receivers invisible to bytecode) for deterministic builds.
 
 ## Maintainer guide: Maven Local and Maven Central

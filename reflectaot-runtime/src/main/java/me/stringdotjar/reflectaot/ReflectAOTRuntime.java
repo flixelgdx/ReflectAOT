@@ -49,32 +49,24 @@ public interface ReflectAOTRuntime {
 
   /**
    * @param o receiver object
-   * @param func opaque call-site token (never a {@link java.lang.reflect.Method})
+   * @param methodId build-time method identifier
    * @param args invocation arguments
-   * @return invocation result
+   * @return invocation result, or {@code null} for void methods when specialized
    */
-  Object callMethod(Object o, Object func, List<?> args);
+  Object callMethod(Object o, int methodId, List<?> args);
 
   /**
    * @param o receiver object
-   * @return declared instance field names for the receiver type, including superclasses where
-   *     applicable
+   * @return declared instance field and property names for the receiver type, including superclasses
+   *     where applicable (never {@code null}; may be zero-length)
    */
-  List<String> fields(Object o);
+  String[] fields(Object o);
 
   /**
    * @param o receiver object
    * @return shallow copy when specialized; otherwise throws
    */
   Object copy(Object o);
-
-  /**
-   * @param o receiver object
-   * @param name field name
-   * @return {@code true} when delete succeeds (Haxe anonymous structures); JVM default is {@code
-   *     false}
-   */
-  boolean deleteField(Object o, String name);
 
   /**
    * @param a first value
@@ -85,30 +77,23 @@ public interface ReflectAOTRuntime {
   int compare(Object a, Object b);
 
   /**
-   * @param f1 first token
-   * @param f2 second token
-   * @return {@code true} when the two tokens are considered equal by the Haxe-style rules
-   *     implemented for JVM
+   * @param methodIdA first build-time method identifier
+   * @param methodIdB second build-time method identifier
+   * @return {@code true} when the identifiers denote the same method target
    */
-  boolean compareMethods(Object f1, Object f2);
+  boolean compareMethods(int methodIdA, int methodIdB);
 
   /**
    * @param v value to test
-   * @return {@code true} for supported functional shapes (see README)
+   * @return {@code true} for supported functional shapes (see project documentation)
    */
   boolean isFunction(Object v);
 
   /**
    * @param v value to test
-   * @return {@code true} for non-primitive-like values (Haxe-style classification)
+   * @return {@code true} for non-primitive-like values per runtime classification rules
    */
   boolean isObject(Object v);
-
-  /**
-   * @param f opaque token
-   * @return varargs wrapper when specialized
-   */
-  Object makeVarArgs(Object f);
 
   /**
    * @param v value to test
