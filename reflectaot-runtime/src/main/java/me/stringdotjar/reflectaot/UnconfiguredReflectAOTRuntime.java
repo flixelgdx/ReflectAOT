@@ -28,7 +28,7 @@ enum UnconfiguredReflectAOTRuntime implements ReflectAOTRuntime {
   }
 
   @Override
-  public Object getProperty(Object o, String name) {
+  public Object property(Object o, String name) {
     throw nx();
   }
 

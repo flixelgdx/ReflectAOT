@@ -38,7 +38,7 @@ public interface ReflectAOTRuntime {
    * @param name property name (JavaBeans first, then raw field)
    * @return property value boxed as needed
    */
-  Object getProperty(Object o, String name);
+  Object property(Object o, String name);
 
   /**
    * @param o receiver object

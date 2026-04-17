@@ -55,7 +55,7 @@ public final class ReflectAOTServices {
   }
 
   /**
-   * Resolves a {@link ReflectMethodId} for {@link Reflect#methodId(Class, String, String)}.
+   * Resolves a {@link ReflectMethodId} for {@link Reflect#method(Class, String, String)}.
    *
    * @param clazz receiver class literal from the call site
    * @param name JVM method name
@@ -63,7 +63,7 @@ public final class ReflectAOTServices {
    * @return build-stable id token
    * @throws UnsupportedOperationException when no resolver is installed yet
    */
-  public static ReflectMethodId resolveMethodId(Class<?> clazz, String name, String descriptor) {
+  public static ReflectMethodId resolveMethod(Class<?> clazz, String name, String descriptor) {
     ReflectAOTMethodIdResolver r = methodIds;
     if (r == null) {
       throw new UnsupportedOperationException(
@@ -74,14 +74,14 @@ public final class ReflectAOTServices {
   }
 
   /**
-   * Resolves a {@link ReflectMethodId} for {@link Reflect#methodId(Class, String)}.
+   * Resolves a {@link ReflectMethodId} for {@link Reflect#method(Class, String)}.
    *
    * @param clazz receiver class literal from the call site
    * @param name JVM method name
    * @return build-stable id token
    * @throws UnsupportedOperationException when no resolver is installed yet
    */
-  public static ReflectMethodId resolveMethodId(Class<?> clazz, String name) {
+  public static ReflectMethodId resolveMethod(Class<?> clazz, String name) {
     ReflectAOTMethodIdResolver r = methodIds;
     if (r == null) {
       throw new UnsupportedOperationException(

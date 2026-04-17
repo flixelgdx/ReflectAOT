@@ -5,25 +5,87 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Static entry points for build-time specialized reflection without {@link java.lang.reflect}.
+ * Class that provides a comprehensive runtime interface for reflection-like operations
+ * in environments that require ahead-of-time (AOT) compilation, such as GraalVM Native Image or TeaVM.
+ * <p>
+ * Rather than relying on dynamic reflection, which is often unavailable or restricted in such environments,
+ * this class acts as a facade around code-generated or build-time resolved metadata and references,
+ * enabling type and method inspection, comparison, and dispatch at runtime without incurred reflection costs.
+ * <p>
+ * Main responsibilities and features include:
+ * <ul>
+ *   <li>
+ *     Ensuring early initialization of generated code and bootstrapped class metadata so that
+ *     core reflective services are available as soon as possible.
+ *   </li>
+ *   <li>
+ *     Providing type-safe static APIs for:
+ *     <ul>
+ *       <li>Comparing objects, primitives, and string values even if their implementation relies on customized or generated logic.</li>
+ *       <li>Comparing build-time method identifiers for logical equivalence (crossing the dynamic and static boundary at callsites).</li>
+ *     </ul>
+ *   </li>
+ *   <li>
+ *     Delegating calls to an installed runtime service provider ({@link ReflectAOTRuntime}) which abstracts over the actual implementation—
+ *     either the code generator's output or a fallback shim in test/non-AOT scenarios.
+ *   </li>
+ * </ul>
+ * <p>
+ * This class is intentionally final and stateless; all entry points are static. It is safe to use
+ * across multiple threads and supports a pure-Java fallback suitable for use during build scans
+ * as well as generated, high-efficiency native code at runtime.
+ * <p>
+ * <strong>NOTE:</strong> The presence of this class does not guarantee the existence or correctness
+ * of generated metadata; ensure code generation phases run as required (e.g., via the Gradle plugin).
  *
- * <p>This class defines the reflection operations exposed to gameplay and framework code. A
- * generated {@code me.stringdotjar.reflectaot.generated.ReflectAOTRegistry} supplies the
- * implementation for each build; implementations should preserve the same behavior contract so
- * code behaves consistently across JVM and AOT targets.
+ * <h2>Typical Usage</h2>
  *
- * <p>Implementations are expected to avoid repeated class scanning at runtime: reflective access is
- * resolved during compilation and emitted as direct field access and dispatch where possible.
- * Method dispatch uses compact integer identifiers assigned at build time (see {@link
- * #callMethod(Object, int, List)} and {@link #compareMethods(int, int)}).
+ * <pre>{@code
+ * // Compare two values.
+ * int order = Reflect.compare(a, b);
  *
- * <p><b>No {@link java.lang.reflect}</b>: this class and generated accessors must never use the JDK
- * reflection package. Dispatch is implemented by a generated {@link ReflectAOTRuntime} subtype
- * ({@code ReflectAOTRegistry}).
+ * // Compare two method identifiers.
+ * ReflectMethodId methodId1 = Reflect.method(Foo.class, "method");
+ * ReflectMethodId methodId2 = Reflect.method(Foo.class, "method", "(I)V"); // JVM descriptor, usually not required unless there are multiple overloads.
+ * boolean sameMethod = Reflect.compareMethods(methodId1, methodId2);
  *
- * <p><b>JavaBeans:</b> {@link #getProperty(Object, String)} / {@link #setProperty(Object, String,
- * Object)} prefer JavaBean accessors ({@code getX}/{@code isX}, {@code setX}) before raw fields where
- * that matches common Java property conventions.
+ * // Copy an object.
+ * T copied = Reflect.copy(o);
+ *
+ * // Read a field value.
+ * Object value = Reflect.field(o, "field");
+ *
+ * // Get available fields.
+ * String[] fields = Reflect.fields(o);
+ *
+ * // Invoke a method.
+ * Object result = Reflect.callMethod(o, methodId, args);
+ *
+ * // Read a property value via JavaBean conventions.
+ * Object value = Reflect.property(o, "property");
+ *
+ * // Check if a field exists.
+ * boolean hasField = Reflect.hasField(o, "field");
+ *
+ * // Check if a value is an enum constant.
+ * boolean isEnum = Reflect.isEnumValue(value);
+ *
+ * // Check if a value is a function.
+ * boolean isFunction = Reflect.isFunction(value);
+ *
+ * // Check if a value is an object.
+ * boolean isObject = Reflect.isObject(value);
+ *
+ * // Write a field value directly.
+ * Reflect.setField(o, "field", value);
+ *
+ * // Write a property value via JavaBean conventions.
+ * Reflect.setProperty(o, "property", value);
+ * }</pre>
+ *
+ * @see ReflectAOTServices
+ * @see ReflectAOTRuntime
+ * @see me.stringdotjar.reflectaot.generated.ReflectAOTBootstrap
  */
 public final class Reflect {
 
@@ -153,7 +215,7 @@ public final class Reflect {
 
   /**
    * Same as {@link #callMethod(Object, int, List)} using a {@link ReflectMethodId} from {@link
-   * #methodId(Class, String, String)} (no primitive {@code int} cast at call sites).
+   * #method(Class, String, String)} (no primitive {@code int} cast at call sites).
    *
    * @param o receiver object
    * @param methodId build-resolved method token
@@ -189,7 +251,7 @@ public final class Reflect {
    *
    * @param o receiver object
    * @param methodId build-resolved method token
-   * @param args invocation arguments (may be {@code null} or empty)
+   * @param args invocation arguments (which may be {@code null} or empty)
    * @return invocation result, or {@code null} for void methods when specialized
    */
   public static Object callMethod(Object o, ReflectMethodId methodId, Object... args) {
@@ -212,7 +274,7 @@ public final class Reflect {
    * @param descriptor JVM method descriptor (for example {@code "(F)V"})
    * @return opaque method token for {@link #callMethod(Object, ReflectMethodId, Object...)}
    */
-  public static ReflectMethodId methodId(Class<?> clazz, String name, String descriptor) {
+  public static ReflectMethodId method(Class<?> clazz, String name, String descriptor) {
     if (clazz == null) {
       throw new IllegalArgumentException("clazz");
     }
@@ -222,16 +284,16 @@ public final class Reflect {
     if (descriptor == null) {
       throw new IllegalArgumentException("descriptor");
     }
-    return ReflectAOTServices.resolveMethodId(clazz, name, descriptor);
+    return ReflectAOTServices.resolveMethod(clazz, name, descriptor);
   }
 
   /**
-   * Same as {@link #methodId(Class, String, String)} but the JVM method descriptor is inferred at
+   * Same as {@link #method(Class, String, String)} but the JVM method descriptor is inferred at
    * build time when exactly one public instance method with {@code name} exists on {@code clazz}
    * (including supertypes).
    *
    * <p>If several overloads share the same name, the Gradle task fails with a list of descriptors;
-   * use {@link #methodId(Class, String, String)} for those cases.
+   * use {@link #method(Class, String, String)} for those cases.
    *
    * <p>{@code clazz} and {@code name} must be compile-time constants (typically {@code Foo.class}
    * and a string literal) so the scanner can validate the call.
@@ -240,14 +302,14 @@ public final class Reflect {
    * @param name JVM method name
    * @return opaque method token for {@link #callMethod(Object, ReflectMethodId, Object...)}
    */
-  public static ReflectMethodId methodId(Class<?> clazz, String name) {
+  public static ReflectMethodId method(Class<?> clazz, String name) {
     if (clazz == null) {
       throw new IllegalArgumentException("clazz");
     }
     if (name == null) {
       throw new IllegalArgumentException("name");
     }
-    return ReflectAOTServices.resolveMethodId(clazz, name);
+    return ReflectAOTServices.resolveMethod(clazz, name);
   }
 
   /**
@@ -262,8 +324,8 @@ public final class Reflect {
    * @throws UnsupportedOperationException when the receiver type was not specialized at build time
    * @throws IllegalArgumentException when the name is unknown for the receiver
    */
-  public static Object getProperty(Object o, String field) {
-    return ReflectAOTServices.runtime().getProperty(o, field);
+  public static Object property(Object o, String field) {
+    return ReflectAOTServices.runtime().property(o, field);
   }
 
   /**
@@ -291,9 +353,7 @@ public final class Reflect {
   }
 
   /**
-   * Returns whether a value should be treated as a callable without using {@link
-   * java.lang.reflect}.
-   *
+   * Returns whether a value should be treated as a callable.
    * @param v value to test
    * @return {@code true} for supported functional shapes (see project documentation)
    */
@@ -317,14 +377,13 @@ public final class Reflect {
   /**
    * Writes a field value to the target instance.
    *
-   * <p>If a field is immutable, final, unsupported, or cannot be written safely, implementations
-   * should throw an explicit exception instead of silently failing.
+   * <p>If a field is immutable, final, unsupported, or cannot be written safely, an exception will be thrown.
    *
-   * @param o receiver object
-   * @param field field name to write
-   * @param value new value to store
-   * @throws UnsupportedOperationException when the receiver type was not specialized at build time
-   * @throws IllegalArgumentException when the name is unknown for the receiver
+   * @param o Receiver object.
+   * @param field Field name to write.
+   * @param value New value to store.
+   * @throws UnsupportedOperationException When the receiver type was not specialized at build time.
+   * @throws IllegalArgumentException When the name is unknown for the receiver.
    */
   public static void setField(Object o, String field, Object value) {
     ReflectAOTServices.runtime().setField(o, field, value);
@@ -333,8 +392,8 @@ public final class Reflect {
   /**
    * Writes a property value on the target.
    *
-   * <p>Implementations may resolve JavaBean setters when available and fall back to direct field
-   * writes when appropriate. Unsupported writes should throw an explicit exception.
+   * <p>Resolve JavaBean setters when available and falls back to direct field
+   * writes when appropriate. Unsupported writes will throw an exception.
    *
    * @param o receiver object
    * @param field property name to resolve

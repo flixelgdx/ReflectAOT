@@ -7,7 +7,7 @@ import java.util.Objects;
  * java.util.List)}.
  *
  * <p>Created by the generated {@code ReflectAOTMethodIdTable} (installed from {@code
- * ReflectAOTBootstrap}). Do not construct manually; use {@link Reflect#methodId(Class, String,
+ * ReflectAOTBootstrap}). Do not construct manually; use {@link Reflect#method(Class, String,
  * String)} so the Gradle task can validate the target at build time.
  */
 public final class ReflectMethodId {
