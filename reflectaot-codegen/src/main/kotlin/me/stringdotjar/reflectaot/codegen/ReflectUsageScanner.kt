@@ -61,10 +61,9 @@ object ReflectUsageScanner {
 
   private const val METHOD_ID_DESC = "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Lme/stringdotjar/reflectaot/ReflectMethodId;"
 
-  fun scanClasspath(
-    roots: Collection<File>,
-    excludePackagePrefixes: List<String>,
-  ): ClasspathScanResult {
+  private const val METHOD_ID_DESC_2 = "(Ljava/lang/Class;Ljava/lang/String;)Lme/stringdotjar/reflectaot/ReflectMethodId;"
+
+  fun scanClasspath(roots: Collection<File>, excludePackagePrefixes: List<String>): ClasspathScanResult {
     val reflectCalls = ArrayList<ReflectCallSite>()
     val methodIdCalls = ArrayList<MethodIdCallSite>()
     for (root in roots) {
@@ -137,8 +136,9 @@ object ReflectUsageScanner {
         continue
       }
       if (insn.name == "methodId") {
-        if (insn.desc == METHOD_ID_DESC) {
-          methodIdHits.add(extractMethodIdLiterals(insns, i))
+        when (insn.desc) {
+          METHOD_ID_DESC -> methodIdHits.add(extractMethodIdThreeArgs(insns, i))
+          METHOD_ID_DESC_2 -> methodIdHits.add(extractMethodIdTwoArgs(insns, i))
         }
         continue
       }
@@ -225,7 +225,7 @@ object ReflectUsageScanner {
     }
   }
 
-  private fun extractMethodIdLiterals(
+  private fun extractMethodIdThreeArgs(
     insns: Array<AbstractInsnNode>,
     invokeIndex: Int,
   ): MethodIdCallSite {
@@ -251,6 +251,25 @@ object ReflectUsageScanner {
       return MethodIdCallSite(null, null, null)
     }
     return MethodIdCallSite(owner, name, desc)
+  }
+
+  /** {@code Reflect.methodId(Class, String)} — infers descriptor at build time when unique. */
+  private fun extractMethodIdTwoArgs(
+    insns: Array<AbstractInsnNode>,
+    invokeIndex: Int,
+  ): MethodIdCallSite {
+    var p = invokeIndex - 1
+    p = skipNonInstructionsBackward(insns, p)
+    val nIns = insns.getOrNull(p)
+    if (nIns !is LdcInsnNode || nIns.cst !is String) {
+      return MethodIdCallSite(null, null, null)
+    }
+    val name = nIns.cst as String
+    p--
+    p = skipNonInstructionsBackward(insns, p)
+    val cIns = insns.getOrNull(p) ?: return MethodIdCallSite(null, null, null)
+    val owner = extractClassLiteralInternal(cIns) ?: return MethodIdCallSite(null, null, null)
+    return MethodIdCallSite(owner, name, null)
   }
 
   private fun extractClassLiteralInternal(insn: AbstractInsnNode): String? {

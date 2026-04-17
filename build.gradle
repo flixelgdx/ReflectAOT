@@ -12,16 +12,6 @@ subprojects {
   }
 }
 
-tasks.register('uploadToMavenLocal') {
-  group = 'publishing'
-  description = 'Publishes all ReflectAOT artifacts using publishToMavenLocal (mnemonic aggregate task).'
-  dependsOn(
-    ':reflectaot-runtime:publishToMavenLocal',
-    ':reflectaot-codegen:publishToMavenLocal',
-    ':reflectaot-gradle-plugin:publishToMavenLocal',
-  )
-}
-
 /** JitPack and local installs run {@code ./gradlew install} by convention. */
 tasks.register('install') {
   group = 'publishing'

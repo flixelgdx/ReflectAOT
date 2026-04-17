@@ -31,6 +31,12 @@ object MethodIdTableBytecodeEmitter {
       METHOD_ID_TYPE,
       arrayOf(CLASS_TYPE, STRING_TYPE, STRING_TYPE),
     )
+  private val M_RESOLVE_CLASS_NAME =
+    AsmMethod(
+      "resolve",
+      METHOD_ID_TYPE,
+      arrayOf(CLASS_TYPE, STRING_TYPE),
+    )
 
   fun emit(
     outputDir: File,
@@ -119,6 +125,8 @@ object MethodIdTableBytecodeEmitter {
       }
     }
 
+    emitResolveClassAndNameOnly(cw, sorted)
+
     cw.visitEnd()
     val out = File(outputDir, "$TABLE_INTERNAL.class")
     out.parentFile.mkdirs()
@@ -126,4 +134,64 @@ object MethodIdTableBytecodeEmitter {
   }
 
   private fun fieldName(id: Int): String = "M$id"
+
+  /**
+   * {@code resolve(Class, String)}: match class + name; if more than one binding matches at
+   * runtime (multiple overloads of the same name), throw so callers use the 3-arg overload.
+   */
+  private fun emitResolveClassAndNameOnly(
+    cw: ClassWriter,
+    sorted: List<MethodIdBinding>,
+  ) {
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, M_RESOLVE_CLASS_NAME, null, null, cw)
+    ga.visitCode()
+    if (sorted.isEmpty()) {
+      ga.throwException(
+        Type.getType(IllegalArgumentException::class.java),
+        "No Reflect.methodId call sites were generated; remove Reflect.methodId calls or run codegen after adding them.",
+      )
+      ga.endMethod()
+      return
+    }
+    val foundSlot = ga.newLocal(METHOD_ID_TYPE)
+    val countSlot = ga.newLocal(Type.INT_TYPE)
+    ga.visitInsn(Opcodes.ACONST_NULL)
+    ga.storeLocal(foundSlot)
+    ga.push(0)
+    ga.storeLocal(countSlot)
+    val ambiguous = ga.newLabel()
+    val notFound = ga.newLabel()
+    for (b in sorted) {
+      val skip = ga.newLabel()
+      ga.loadArg(0)
+      ga.visitLdcInsn(Type.getObjectType(b.userClassInternal))
+      ga.visitJumpInsn(Opcodes.IF_ACMPNE, skip)
+      ga.loadArg(1)
+      ga.push(b.name)
+      ga.invokeVirtual(STRING_TYPE, AsmMethod("equals", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE)))
+      ga.ifZCmp(GeneratorAdapter.EQ, skip)
+      ga.loadLocal(countSlot)
+      ga.visitJumpInsn(Opcodes.IFNE, ambiguous)
+      // iinc, not visitIincInsn: newLocal slots are used via raw mv; LVS.visitIincInsn remaps again.
+      ga.iinc(countSlot, 1)
+      ga.getStatic(TABLE_TYPE, fieldName(b.id), METHOD_ID_TYPE)
+      ga.storeLocal(foundSlot)
+      ga.mark(skip)
+    }
+    ga.loadLocal(countSlot)
+    ga.visitJumpInsn(Opcodes.IFEQ, notFound)
+    ga.loadLocal(foundSlot)
+    ga.returnValue()
+    ga.mark(notFound)
+    ga.throwException(
+      Type.getType(IllegalArgumentException::class.java),
+      "Unknown Reflect.methodId (class, name); use Reflect.methodId(Class, String, String) with a JVM descriptor.",
+    )
+    ga.mark(ambiguous)
+    ga.throwException(
+      Type.getType(IllegalArgumentException::class.java),
+      "Ambiguous Reflect.methodId (class, name): multiple overloads share that name; use Reflect.methodId(Class, String, String) with a JVM descriptor.",
+    )
+    ga.endMethod()
+  }
 }

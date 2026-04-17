@@ -55,13 +55,12 @@ object ReflectAOTCodegen {
 
     val unresolvedMethodIds =
       scan.methodIdCalls.filter { site ->
-        site.ownerClassInternalOrNull == null || site.nameOrNull == null || site.descriptorOrNull == null
+        site.ownerClassInternalOrNull == null || site.nameOrNull == null
       }
     if (unresolvedMethodIds.isNotEmpty()) {
       throw IllegalStateException(
-        "ReflectAOT: Reflect.methodId(Class, String, String) must use a reference type .class literal " +
-          "and two string literals so the build can resolve the method. " +
-          "Primitive .class, dynamic Class values, or non-literal strings are not supported.",
+        "ReflectAOT: Reflect.methodId(...) must use a reference type .class literal and string literal(s) " +
+          "so the build can resolve the method. Primitive .class or non-constant arguments are not supported.",
       )
     }
 
@@ -128,7 +127,7 @@ object ReflectAOTCodegen {
             throw IllegalStateException(
               "ReflectAOT: unknown property or field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
                 "For JavaBeans accessors use the property name (e.g. {@code x} for {@code getX()}). " +
-                "To invoke a regular method use Reflect.methodId(SomeType.class, \"methodName\", \"(I)V\") and Reflect.callMethod(receiver, id, args).",
+                "To invoke a regular method use Reflect.methodId(SomeType.class, \"methodName\") when the name is unique, or Reflect.methodId(SomeType.class, \"methodName\", \"(I)V\") with a JVM descriptor if overloaded.",
             )
           }
         }
@@ -144,7 +143,30 @@ object ReflectAOTCodegen {
     for (s in scan.methodIdCalls) {
       val o = s.ownerClassInternalOrNull ?: continue
       val n = s.nameOrNull ?: continue
-      val d = s.descriptorOrNull ?: continue
+      val t =
+        typesByInternal[o]
+          ?: throw IllegalStateException(
+            "ReflectAOT: could not load class bytes for Reflect.methodId owner ${o.replace('/', '.')}.",
+          )
+      val d =
+        if (s.descriptorOrNull != null) {
+          s.descriptorOrNull
+        } else {
+          val candidates = t.instanceMethods.filter { it.name == n }
+          when (candidates.size) {
+            0 ->
+              throw IllegalStateException(
+                "ReflectAOT: no public instance method named \"$n\" on ${o.replace('/', '.')} for Reflect.methodId(Class, String).",
+              )
+            1 -> candidates[0].descriptor
+            else ->
+              throw IllegalStateException(
+                "ReflectAOT: method \"$n\" on ${o.replace('/', '.')} is overloaded; cannot use Reflect.methodId(Class, String). " +
+                  "Overloads: ${candidates.joinToString { it.descriptor }}. " +
+                  "Use Reflect.methodId(${o.replace('/', '.')}.class, \"$n\", \"<descriptor>\") with the JVM descriptor of the overload you need.",
+              )
+          }
+        }
       keys.add(Triple(o, n, d))
     }
     val sortedKeys = keys.sortedWith(compareBy({ it.first }, { it.second }, { it.third }))

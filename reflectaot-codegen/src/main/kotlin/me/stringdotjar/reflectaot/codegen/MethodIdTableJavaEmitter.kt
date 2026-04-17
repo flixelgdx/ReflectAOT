@@ -40,6 +40,34 @@ object MethodIdTableJavaEmitter {
         "    throw new IllegalArgumentException(\"Unknown Reflect.methodId (class, name, descriptor) combination\");\n",
       )
     }
+    sb.append("  }\n\n")
+    sb.append("  public ReflectMethodId resolve(Class<?> clazz, String name) {\n")
+    if (sorted.isEmpty()) {
+      sb.append(
+        "    throw new IllegalArgumentException(\"No Reflect.methodId call sites were generated; remove Reflect.methodId calls or run codegen after adding them.\");\n",
+      )
+    } else {
+      sb.append("    int matches = 0;\n")
+      sb.append("    ReflectMethodId found = null;\n")
+      for (b in sorted) {
+        val fq = internalToClassLiteralSource(b.userClassInternal)
+        sb.append("    if (clazz == ").append(fq).append(" && \"").append(escape(b.name)).append("\".equals(name)) {\n")
+        sb.append("      if (matches != 0) {\n")
+        sb.append(
+          "        throw new IllegalArgumentException(\"Ambiguous Reflect.methodId (class, name): multiple overloads share that name; use Reflect.methodId(Class, String, String) with a JVM descriptor.\");\n",
+        )
+        sb.append("      }\n")
+        sb.append("      matches = 1;\n")
+        sb.append("      found = M").append(b.id).append(";\n")
+        sb.append("    }\n")
+      }
+      sb.append("    if (matches == 0) {\n")
+      sb.append(
+        "      throw new IllegalArgumentException(\"Unknown Reflect.methodId (class, name); use Reflect.methodId(Class, String, String) with a JVM descriptor.\");\n",
+      )
+      sb.append("    }\n")
+      sb.append("    return found;\n")
+    }
     sb.append("  }\n}\n")
     File(dir, "ReflectAOTMethodIdTable.java").writeText(sb.toString())
   }

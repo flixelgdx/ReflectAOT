@@ -6,7 +6,6 @@ import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.testing.Test
-import java.io.File
 
 class ReflectAOTPlugin : Plugin<Project> {
 
@@ -22,42 +21,19 @@ class ReflectAOTPlugin : Plugin<Project> {
           .getResourceAsStream("/META-INF/reflectaot/runtime-version.txt")
           ?.use { it.bufferedReader().readText().trim() }
           ?: "0.1.0-SNAPSHOT"
-      val repoRoot =
-        project.layout.buildDirectory.dir("reflectaot-embedded-m2/repository").get().asFile.apply {
-          mkdirs()
-        }
-      val moduleDir =
-        File(repoRoot, "me/stringdotjar/reflectaot-runtime-embedded/$version").apply {
-          mkdirs()
-        }
-      val pom =
-        """<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>me.stringdotjar</groupId>
-  <artifactId>reflectaot-runtime-embedded</artifactId>
-  <version>$version</version>
-  <packaging>jar</packaging>
-</project>
-"""
-      File(moduleDir, "reflectaot-runtime-embedded-$version.pom").writeText(pom)
-      embeddedRuntime.openStream().use { input ->
-        File(moduleDir, "reflectaot-runtime-embedded-$version.jar").outputStream().use { out ->
-          input.copyTo(out)
-        }
-      }
-      ReflectAOTPlugin::class.java
-        .getResourceAsStream("/META-INF/reflectaot/reflectaot-runtime-embedded-sources.jar")
-        ?.use { input ->
-          File(moduleDir, "reflectaot-runtime-embedded-$version-sources.jar").outputStream().use { out ->
-            input.copyTo(out)
-          }
-        }
-      project.repositories.maven { repo ->
-        repo.url = project.uri(repoRoot)
-        repo.name = "ReflectAOTEmbeddedRuntime"
-      }
+      // dependencyResolutionManagement (FAIL_ON_PROJECT_REPOS / PREFER_SETTINGS) ignores
+      // project.repositories — so a file repo under the build directory is never consulted.
+      // Installing into ~/.m2 matches mavenLocal() in settings.gradle, which most multi-module
+      // builds already use for snapshots; IntelliJ can attach -sources.jar from the same tree.
+      EmbeddedRuntimeMavenLocal.install(
+        version,
+        embeddedRuntime.openStream(),
+        ReflectAOTPlugin::class.java.getResourceAsStream("/META-INF/reflectaot/reflectaot-runtime-embedded-sources.jar"),
+      )
+      project.logger.lifecycle(
+        "ReflectAOT: installed me.stringdotjar:reflectaot-runtime-embedded:$version into ~/.m2/repository " +
+          "(for resolution when settings use mavenLocal()).",
+      )
       project.dependencies.add(
         JavaPlugin.IMPLEMENTATION_CONFIGURATION_NAME,
         "me.stringdotjar:reflectaot-runtime-embedded:$version",

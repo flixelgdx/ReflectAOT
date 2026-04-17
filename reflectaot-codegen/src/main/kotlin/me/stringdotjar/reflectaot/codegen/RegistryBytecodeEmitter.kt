@@ -240,6 +240,9 @@ object RegistryBytecodeEmitter {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, M_CALL_METHOD, null, null, cw)
     ga.visitCode()
     if (sorted.isEmpty()) {
+      ga.loadArg(0)
+      ga.loadArg(1)
+      ga.loadArg(2)
       ga.invokeStatic(DEFAULT_TYPE, M_CALL_METHOD)
       ga.returnValue()
       ga.endMethod()
@@ -264,6 +267,9 @@ object RegistryBytecodeEmitter {
       ga.mark(next)
     }
     ga.pop()
+    ga.loadArg(0)
+    ga.loadArg(1)
+    ga.loadArg(2)
     ga.invokeStatic(DEFAULT_TYPE, M_CALL_METHOD)
     ga.returnValue()
     ga.endMethod()

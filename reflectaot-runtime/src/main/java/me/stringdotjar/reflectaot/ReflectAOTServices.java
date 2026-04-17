@@ -72,4 +72,22 @@ public final class ReflectAOTServices {
     }
     return r.resolve(clazz, name, descriptor);
   }
+
+  /**
+   * Resolves a {@link ReflectMethodId} for {@link Reflect#methodId(Class, String)}.
+   *
+   * @param clazz receiver class literal from the call site
+   * @param name JVM method name
+   * @return build-stable id token
+   * @throws UnsupportedOperationException when no resolver is installed yet
+   */
+  public static ReflectMethodId resolveMethodId(Class<?> clazz, String name) {
+    ReflectAOTMethodIdResolver r = methodIds;
+    if (r == null) {
+      throw new UnsupportedOperationException(
+          "Reflect.methodId: no generated ReflectAOTMethodIdTable installed. "
+              + "Run the generateReflectAOT Gradle task and ensure ReflectAOTBootstrap is on the classpath.");
+    }
+    return r.resolve(clazz, name);
+  }
 }

@@ -1,7 +1,8 @@
 package me.stringdotjar.reflectaot;
 
 /**
- * Build-generated resolver for {@link Reflect#methodId(Class, String, String)}.
+ * Build-generated resolver for {@link Reflect#methodId(Class, String, String)} and {@link
+ * Reflect#methodId(Class, String)}.
  */
 public interface ReflectAOTMethodIdResolver {
 
@@ -12,4 +13,14 @@ public interface ReflectAOTMethodIdResolver {
    * @return stable id for {@link Reflect#callMethod(Object, ReflectMethodId, java.util.List)}
    */
   ReflectMethodId resolve(Class<?> clazz, String name, String descriptor);
+
+  /**
+   * Resolves by class and method name only when the build proved a single public instance overload
+   * for that pair; otherwise the generated implementation throws with an actionable message.
+   *
+   * @param clazz literal class from {@link Reflect#methodId(Class, String)}
+   * @param name JVM method name
+   * @return stable id for {@link Reflect#callMethod(Object, ReflectMethodId, java.util.List)}
+   */
+  ReflectMethodId resolve(Class<?> clazz, String name);
 }

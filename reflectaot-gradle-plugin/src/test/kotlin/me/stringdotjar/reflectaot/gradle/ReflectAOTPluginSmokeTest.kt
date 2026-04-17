@@ -19,7 +19,10 @@ class ReflectAOTPluginSmokeTest {
           id 'java'
           id 'me.stringdotjar.reflectaot'
       }
-      repositories { mavenCentral() }
+      repositories {
+          mavenLocal()
+          mavenCentral()
+      }
       """.trimIndent(),
     )
 

@@ -18,10 +18,13 @@ plugins {
     id 'me.stringdotjar.reflectaot' version '0.1.0-SNAPSHOT'
 }
 
-repositories { mavenCentral() }
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
 ```
 
-The plugin adds the runtime implementation dependency for you (it embeds `reflectaot-runtime` into the plugin jar for local resolution without an extra Maven coordinate).
+The plugin embeds `reflectaot-runtime` in the plugin jar and, on apply, installs a Maven layout for `me.stringdotjar:reflectaot-runtime-embedded:<version>` under **`~/.m2/repository/`** (including **`-sources.jar`**). Gradle resolves that coordinate through **`mavenLocal()`**, which must appear in **`settings.gradle`** when you use **`dependencyResolutionManagement`** (`FAIL_ON_PROJECT_REPOS` / `PREFER_SETTINGS` ignore `project.repositories`, so a build-local file repo is not enough).
 
 Published Maven coordinates include **`-sources`** and **`-javadoc`** jars for IDE “Download sources/documentation” when you depend on `reflectaot-runtime`, `reflectaot-codegen`, or the plugin marker from Maven Local / Central.
 

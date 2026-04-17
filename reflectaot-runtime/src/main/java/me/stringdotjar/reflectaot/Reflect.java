@@ -226,6 +226,31 @@ public final class Reflect {
   }
 
   /**
+   * Same as {@link #methodId(Class, String, String)} but the JVM method descriptor is inferred at
+   * build time when exactly one public instance method with {@code name} exists on {@code clazz}
+   * (including supertypes).
+   *
+   * <p>If several overloads share the same name, the Gradle task fails with a list of descriptors;
+   * use {@link #methodId(Class, String, String)} for those cases.
+   *
+   * <p>{@code clazz} and {@code name} must be compile-time constants (typically {@code Foo.class}
+   * and a string literal) so the scanner can validate the call.
+   *
+   * @param clazz receiver class literal
+   * @param name JVM method name
+   * @return opaque method token for {@link #callMethod(Object, ReflectMethodId, Object...)}
+   */
+  public static ReflectMethodId methodId(Class<?> clazz, String name) {
+    if (clazz == null) {
+      throw new IllegalArgumentException("clazz");
+    }
+    if (name == null) {
+      throw new IllegalArgumentException("name");
+    }
+    return ReflectAOTServices.resolveMethodId(clazz, name);
+  }
+
+  /**
    * Reads a property value from the target.
    *
    * <p>Implementations may resolve JavaBean getters when available and fall back to direct field
