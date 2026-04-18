@@ -22,46 +22,34 @@ import org.objectweb.asm.tree.analysis.BasicVerifier
 import org.objectweb.asm.tree.analysis.Frame
 import java.io.File
 
+/** One scanned `Reflect.<name>(…)` site; [reflectMethod] matches [ReflectApiNames] entries. */
 data class ReflectCallSite(
   val reflectMethod: String,
   val receiverInternalOrNull: String?,
   val nameLiteralOrNull: String?,
 )
 
+/** Parsed `Reflect.method(Class, …)` inputs (descriptor optional when two-arg overload used). */
 data class MethodIdCallSite(
   val ownerClassInternalOrNull: String?,
   val nameOrNull: String?,
   val descriptorOrNull: String?,
 )
 
+/** Combined output of [scanClasspath]. */
 data class ClasspathScanResult(
   val reflectCalls: List<ReflectCallSite>,
   val methodIdCalls: List<MethodIdCallSite>,
 )
 
 /**
- * Discovers {@code me.stringdotjar.reflectaot.Reflect} static call sites and extracts the static JVM type of the
- * first {@code Object} receiver argument when it is known from bytecode (not {@code java/lang/Object}).
+ * Walks compiled classes and finds `invokestatic` calls to [ReflectApiNames.REFLECT_INTERNAL].
+ *
+ * For field/property helpers it records the **reflect API name** (e.g. [ReflectApiNames.FIELD]) and,
+ * when possible, the JVM internal name of the **first argument** (receiver) and a **string literal**
+ * member name. For [ReflectApiNames.METHOD] it parses class/name/(descriptor) from nearby bytecode.
  */
 object ReflectUsageScanner {
-
-  private const val REFLECT_INTERNAL = "me/stringdotjar/reflectaot/Reflect"
-
-  private val TRACKED =
-    setOf(
-      "field",
-      "setField",
-      "getProperty",
-      "setProperty",
-      "hasField",
-      "fields",
-      "callMethod",
-      "methodId",
-    )
-
-  private const val METHOD_ID_DESC = "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Lme/stringdotjar/reflectaot/ReflectMethodId;"
-
-  private const val METHOD_ID_DESC_2 = "(Ljava/lang/Class;Ljava/lang/String;)Lme/stringdotjar/reflectaot/ReflectMethodId;"
 
   fun scanClasspath(roots: Collection<File>, excludePackagePrefixes: List<String>): ClasspathScanResult {
     val reflectCalls = ArrayList<ReflectCallSite>()
@@ -79,10 +67,8 @@ object ReflectUsageScanner {
     return ClasspathScanResult(reflectCalls, methodIdCalls)
   }
 
-  fun shouldExclude(
-    internalName: String,
-    excludePackagePrefixes: List<String>,
-  ): Boolean {
+  /** True when [internalName]’s dotted form starts with any configured exclude prefix (JDK, Kotlin, …). */
+  fun shouldExclude(internalName: String, excludePackagePrefixes: List<String>): Boolean {
     val dotted = internalName.replace('/', '.')
     for (p in excludePackagePrefixes) {
       if (dotted.startsWith(p)) {
@@ -92,6 +78,12 @@ object ReflectUsageScanner {
     return false
   }
 
+  /**
+   * Parses one class file and returns all discovered `Reflect` call sites.
+   *
+   * Uses ASM’s [BasicVerifier] frames to type the receiver slot when possible; on analysis failure
+   * returns empty lists for that class (conservative).
+   */
   fun scanClass(bytes: ByteArray): Pair<List<ReflectCallSite>, List<MethodIdCallSite>> {
     val reflectHits = ArrayList<ReflectCallSite>()
     val methodIdHits = ArrayList<MethodIdCallSite>()
@@ -106,10 +98,7 @@ object ReflectUsageScanner {
     return reflectHits to methodIdHits
   }
 
-  private fun scanMethod(
-    owner: String,
-    method: MethodNode,
-  ): Pair<List<ReflectCallSite>, List<MethodIdCallSite>> {
+  private fun scanMethod(owner: String, method: MethodNode): Pair<List<ReflectCallSite>, List<MethodIdCallSite>> {
     val reflectHits = ArrayList<ReflectCallSite>()
     val methodIdHits = ArrayList<MethodIdCallSite>()
     val analyzer = Analyzer<BasicValue>(BasicVerifier())
@@ -129,16 +118,17 @@ object ReflectUsageScanner {
       if (insn.opcode != Opcodes.INVOKESTATIC) {
         continue
       }
-      if (insn.owner != REFLECT_INTERNAL) {
+      if (insn.owner != ReflectApiNames.REFLECT_INTERNAL) {
         continue
       }
-      if (insn.name !in TRACKED) {
+      if (insn.name !in ReflectApiNames.SCANNED_STATIC_NAMES) {
         continue
       }
-      if (insn.name == "methodId") {
+      // Reflect.method(Class, …) — build-time method identity; separate extraction path.
+      if (insn.name == ReflectApiNames.METHOD) {
         when (insn.desc) {
-          METHOD_ID_DESC -> methodIdHits.add(extractMethodIdThreeArgs(insns, i))
-          METHOD_ID_DESC_2 -> methodIdHits.add(extractMethodIdTwoArgs(insns, i))
+          ReflectApiNames.METHOD_DESCRIPTOR_3_ARGS -> methodIdHits.add(extractMethodIdThreeArgs(insns, i))
+          ReflectApiNames.METHOD_DESCRIPTOR_2_ARGS -> methodIdHits.add(extractMethodIdTwoArgs(insns, i))
         }
         continue
       }
@@ -167,7 +157,7 @@ object ReflectUsageScanner {
         }
       val receiverOrNull = if (receiver == "java/lang/Object") null else receiver
       val nameLit =
-        if (insn.name == "callMethod" || insn.name == "fields") {
+        if (insn.name == ReflectApiNames.CALL_METHOD || insn.name == ReflectApiNames.FIELDS) {
           null
         } else {
           extractNameLiteral(insn, i, insns)
@@ -183,14 +173,10 @@ object ReflectUsageScanner {
     return reflectHits to methodIdHits
   }
 
-  private fun extractNameLiteral(
-    reflectCall: MethodInsnNode,
-    invokeIndex: Int,
-    insns: Array<AbstractInsnNode>,
-  ): String? {
+  private fun extractNameLiteral(reflectCall: MethodInsnNode, invokeIndex: Int, insns: Array<AbstractInsnNode>): String? {
     val argCount = Type.getArgumentTypes(reflectCall.desc).size
     return when (reflectCall.name) {
-      "field", "getProperty", "hasField" -> {
+      ReflectApiNames.FIELD, ReflectApiNames.PROPERTY, ReflectApiNames.HAS_FIELD -> {
         if (argCount != 2) {
           return null
         }
@@ -203,7 +189,7 @@ object ReflectUsageScanner {
           null
         }
       }
-      "setField", "setProperty" -> {
+      ReflectApiNames.SET_FIELD, ReflectApiNames.SET_PROPERTY -> {
         if (argCount != 3) {
           return null
         }
@@ -225,10 +211,7 @@ object ReflectUsageScanner {
     }
   }
 
-  private fun extractMethodIdThreeArgs(
-    insns: Array<AbstractInsnNode>,
-    invokeIndex: Int,
-  ): MethodIdCallSite {
+  private fun extractMethodIdThreeArgs(insns: Array<AbstractInsnNode>, invokeIndex: Int): MethodIdCallSite {
     var p = invokeIndex - 1
     p = skipNonInstructionsBackward(insns, p)
     val dIns = insns.getOrNull(p)
@@ -253,11 +236,8 @@ object ReflectUsageScanner {
     return MethodIdCallSite(owner, name, desc)
   }
 
-  /** {@code Reflect.methodId(Class, String)} — infers descriptor at build time when unique. */
-  private fun extractMethodIdTwoArgs(
-    insns: Array<AbstractInsnNode>,
-    invokeIndex: Int,
-  ): MethodIdCallSite {
+  /** Two-arg `Reflect.method(Class, String)` — descriptor filled in later by codegen when unique. */
+  private fun extractMethodIdTwoArgs(insns: Array<AbstractInsnNode>, invokeIndex: Int): MethodIdCallSite {
     var p = invokeIndex - 1
     p = skipNonInstructionsBackward(insns, p)
     val nIns = insns.getOrNull(p)
@@ -287,12 +267,8 @@ object ReflectUsageScanner {
    * type from the immediately preceding bytecode for common `Reflect.*(recv, "name", ...)` shapes
    * emitted by javac (field read + string literal + boxed primitive literal).
    */
-  private fun refineReceiverFromPrecedingBytecode(
-    insns: Array<AbstractInsnNode>,
-    invokeIndex: Int,
-    reflectCall: MethodInsnNode,
-  ): String? {
-    if (reflectCall.name == "callMethod") {
+  private fun refineReceiverFromPrecedingBytecode(insns: Array<AbstractInsnNode>, invokeIndex: Int, reflectCall: MethodInsnNode): String? {
+    if (reflectCall.name == ReflectApiNames.CALL_METHOD) {
       return null
     }
     var p = invokeIndex - 1
@@ -335,10 +311,7 @@ object ReflectUsageScanner {
     return null
   }
 
-  private fun skipNonInstructionsBackward(
-    insns: Array<AbstractInsnNode>,
-    p: Int,
-  ): Int {
+  private fun skipNonInstructionsBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
     var q = p
     while (q >= 0) {
       val n = insns[q]
@@ -351,10 +324,7 @@ object ReflectUsageScanner {
     return q
   }
 
-  private fun stripOneExpressionBackward(
-    insns: Array<AbstractInsnNode>,
-    p: Int,
-  ): Int {
+  private fun stripOneExpressionBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
     if (p < 0) {
       return -1
     }
@@ -418,10 +388,7 @@ object ReflectUsageScanner {
     return -1
   }
 
-  private fun stripTrailingBoxedIntLiteralBackward(
-    insns: Array<AbstractInsnNode>,
-    p: Int,
-  ): Int {
+  private fun stripTrailingBoxedIntLiteralBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
     if (p < 0) {
       return p
     }

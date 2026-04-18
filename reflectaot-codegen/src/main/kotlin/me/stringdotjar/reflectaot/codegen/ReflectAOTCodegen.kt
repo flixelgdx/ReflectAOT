@@ -2,48 +2,24 @@ package me.stringdotjar.reflectaot.codegen
 
 import java.io.File
 
-/** Entry point invoked by the Gradle task. */
+/**
+ * Orchestrates the build: scan → load types → validate → emit bytecode and/or Java mirrors.
+ *
+ * Invoked from the Gradle plugin with outputs and scan roots derived from compile classpaths.
+ */
 object ReflectAOTCodegen {
 
-  private val DEFAULT_EXCLUDES =
-    listOf(
-      "java.",
-      "javax.",
-      "kotlin.",
-      "kotlinx.",
-      "jdk.",
-      "sun.",
-      "com.sun.",
-      "org.gradle.",
-      "gradle.",
-      "me.stringdotjar.reflectaot.generated.",
-    )
-
-  private val NEEDS_CONCRETE_RECEIVER =
-    setOf(
-      "field",
-      "setField",
-      "getProperty",
-      "setProperty",
-      "hasField",
-      "fields",
-      "methodId",
-    )
-
-  fun run(
-    output: ReflectAOTOutput,
-    bytecodeOutputDir: File,
-    javaOutputDir: File,
-    scanRoots: Collection<File>,
-    excludePackagePrefixes: List<String>,
-    extraTypes: List<String>,
-  ) {
-    val exclusions = (DEFAULT_EXCLUDES + excludePackagePrefixes).distinct()
+  /**
+   * Loads every discovered receiver/`Reflect.method` owner type, validates names against
+   * introspection, binds [ReflectMethodId]s, then delegates to bytecode and/or Java emitters.
+   */
+  fun run(output: ReflectAOTOutput, bytecodeOutputDir: File, javaOutputDir: File, scanRoots: Collection<File>, excludePackagePrefixes: List<String>, extraTypes: List<String>) {
+    val exclusions = (ReflectClasspathScanDefaults.PACKAGE_PREFIX_EXCLUDES + excludePackagePrefixes).distinct()
     val scan = ReflectUsageScanner.scanClasspath(scanRoots, exclusions)
 
     val unresolvedReflect =
       scan.reflectCalls.filter { site ->
-        site.reflectMethod in NEEDS_CONCRETE_RECEIVER && site.receiverInternalOrNull == null
+        site.reflectMethod in ReflectApiNames.NEEDS_CONCRETE_RECEIVER && site.receiverInternalOrNull == null
       }
     if (unresolvedReflect.isNotEmpty()) {
       val sample = unresolvedReflect.take(5).joinToString { it.reflectMethod }
@@ -59,7 +35,7 @@ object ReflectAOTCodegen {
       }
     if (unresolvedMethodIds.isNotEmpty()) {
       throw IllegalStateException(
-        "ReflectAOT: Reflect.methodId(...) must use a reference type .class literal and string literal(s) " +
+        "ReflectAOT: Reflect.${ReflectApiNames.METHOD}(...) must use a reference type .class literal and string literal(s) " +
           "so the build can resolve the method. Primitive .class or non-constant arguments are not supported.",
       )
     }
@@ -103,16 +79,18 @@ object ReflectAOTCodegen {
     }
   }
 
-  private fun validateReflectNames(
-    scan: ClasspathScanResult,
-    typesByInternal: Map<String, TypeIntrospection.IntrospectedType>,
-  ) {
+  /**
+   * Ensures literal field/property names seen at call sites exist on the introspected receiver type.
+   *
+   * Does not validate `Reflect.method` here — that happens in [buildMethodBindings].
+   */
+  private fun validateReflectNames(scan: ClasspathScanResult, typesByInternal: Map<String, TypeIntrospection.IntrospectedType>) {
     for (site in scan.reflectCalls) {
       val recv = site.receiverInternalOrNull ?: continue
       val name = site.nameLiteralOrNull ?: continue
       val t = typesByInternal[recv] ?: continue
       when (site.reflectMethod) {
-        "field", "setField" -> {
+        ReflectApiNames.FIELD, ReflectApiNames.SET_FIELD -> {
           if (!t.fields.containsKey(name)) {
             throw IllegalStateException(
               "ReflectAOT: unknown field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
@@ -120,14 +98,14 @@ object ReflectAOTCodegen {
             )
           }
         }
-        "getProperty", "setProperty", "hasField" -> {
+        ReflectApiNames.PROPERTY, ReflectApiNames.SET_PROPERTY, ReflectApiNames.HAS_FIELD -> {
           val propNames = t.properties.map { it.name }.toSet()
           val ok = t.fields.containsKey(name) || name in propNames
           if (!ok) {
             throw IllegalStateException(
               "ReflectAOT: unknown property or field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
-                "For JavaBeans accessors use the property name (e.g. {@code x} for {@code getX()}). " +
-                "To invoke a regular method use Reflect.methodId(SomeType.class, \"methodName\") when the name is unique, or Reflect.methodId(SomeType.class, \"methodName\", \"(I)V\") with a JVM descriptor if overloaded.",
+                "For JavaBeans accessors use the property name (e.g. {@code foo} for {@code getFoo()}). " +
+                "To invoke a regular method use Reflect.${ReflectApiNames.METHOD}(SomeType.class, \"methodName\") when the name is unique, or Reflect.${ReflectApiNames.METHOD}(SomeType.class, \"methodName\", \"(I)V\") with a JVM descriptor if overloaded.",
             )
           }
         }
@@ -135,10 +113,12 @@ object ReflectAOTCodegen {
     }
   }
 
-  private fun buildMethodBindings(
-    scan: ClasspathScanResult,
-    typesByInternal: Map<String, TypeIntrospection.IntrospectedType>,
-  ): List<MethodIdBinding> {
+  /**
+   * Dedupes `(owner, method name, JVM descriptor)` pairs from scanned `Reflect.method` calls,
+   * resolves missing descriptors when only two args were used and the method name is unique,
+   * assigns stable numeric ids used by `ReflectMethodId` and dispatch tables.
+   */
+  private fun buildMethodBindings(scan: ClasspathScanResult, typesByInternal: Map<String, TypeIntrospection.IntrospectedType>): List<MethodIdBinding> {
     val keys = LinkedHashSet<Triple<String, String, String>>()
     for (s in scan.methodIdCalls) {
       val o = s.ownerClassInternalOrNull ?: continue
@@ -146,24 +126,25 @@ object ReflectAOTCodegen {
       val t =
         typesByInternal[o]
           ?: throw IllegalStateException(
-            "ReflectAOT: could not load class bytes for Reflect.methodId owner ${o.replace('/', '.')}.",
+            "ReflectAOT: could not load class bytes for Reflect.${ReflectApiNames.METHOD} owner ${o.replace('/', '.')}.",
           )
       val d =
         if (s.descriptorOrNull != null) {
           s.descriptorOrNull
         } else {
+          // Two-arg Reflect.method(Class, String): pick the sole public overload, or fail with overload list.
           val candidates = t.instanceMethods.filter { it.name == n }
           when (candidates.size) {
             0 ->
               throw IllegalStateException(
-                "ReflectAOT: no public instance method named \"$n\" on ${o.replace('/', '.')} for Reflect.methodId(Class, String).",
+                "ReflectAOT: no public instance method named \"$n\" on ${o.replace('/', '.')} for Reflect.${ReflectApiNames.METHOD}(Class, String).",
               )
             1 -> candidates[0].descriptor
             else ->
               throw IllegalStateException(
-                "ReflectAOT: method \"$n\" on ${o.replace('/', '.')} is overloaded; cannot use Reflect.methodId(Class, String). " +
+                "ReflectAOT: method \"$n\" on ${o.replace('/', '.')} is overloaded; cannot use Reflect.${ReflectApiNames.METHOD}(Class, String). " +
                   "Overloads: ${candidates.joinToString { it.descriptor }}. " +
-                  "Use Reflect.methodId(${o.replace('/', '.')}.class, \"$n\", \"<descriptor>\") with the JVM descriptor of the overload you need.",
+                  "Use Reflect.${ReflectApiNames.METHOD}(${o.replace('/', '.')}.class, \"$n\", \"<descriptor>\") with the JVM descriptor of the overload you need.",
               )
           }
         }
@@ -176,12 +157,12 @@ object ReflectAOTCodegen {
       val t =
         typesByInternal[o]
           ?: throw IllegalStateException(
-            "ReflectAOT: could not load class bytes for Reflect.methodId owner ${o.replace('/', '.')}.",
+            "ReflectAOT: could not load class bytes for Reflect.${ReflectApiNames.METHOD} owner ${o.replace('/', '.')}.",
           )
       val im =
         t.instanceMethods.firstOrNull { it.name == n && it.descriptor == d }
           ?: throw IllegalStateException(
-            "ReflectAOT: no public instance method $n$d on ${o.replace('/', '.')} for Reflect.methodId.",
+            "ReflectAOT: no public instance method $n$d on ${o.replace('/', '.')} for Reflect.${ReflectApiNames.METHOD}.",
           )
       out.add(
         MethodIdBinding(
@@ -196,12 +177,7 @@ object ReflectAOTCodegen {
     return out
   }
 
-  private fun emitBytecode(
-    bytecodeOutputDir: File,
-    types: List<TypeIntrospection.IntrospectedType>,
-    roots: Collection<File>,
-    methodBindings: List<MethodIdBinding>,
-  ) {
+  private fun emitBytecode(bytecodeOutputDir: File, types: List<TypeIntrospection.IntrospectedType>, roots: Collection<File>, methodBindings: List<MethodIdBinding>) {
     for (t in types) {
       AccessBytecodeEmitter.emit(t, bytecodeOutputDir, roots, methodBindings)
     }
@@ -210,13 +186,8 @@ object ReflectAOTCodegen {
     BootstrapBytecodeEmitter.emit(bytecodeOutputDir)
   }
 
-  private fun emitJava(
-    javaOutputDir: File,
-    types: List<TypeIntrospection.IntrospectedType>,
-    methodBindings: List<MethodIdBinding>,
-    roots: Collection<File>,
-    emitBootstrap: Boolean,
-  ) {
+  /** When output is BOTH, bootstrap Java is omitted because bytecode path already installs services. */
+  private fun emitJava(javaOutputDir: File, types: List<TypeIntrospection.IntrospectedType>, methodBindings: List<MethodIdBinding>, roots: Collection<File>, emitBootstrap: Boolean) {
     JavaMirrorEmitter.emit(javaOutputDir, types, methodBindings, roots)
     MethodIdTableJavaEmitter.emit(javaOutputDir, methodBindings)
     if (emitBootstrap) {

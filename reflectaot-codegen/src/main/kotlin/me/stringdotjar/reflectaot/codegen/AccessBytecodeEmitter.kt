@@ -8,7 +8,8 @@ import java.io.File
 import org.objectweb.asm.commons.Method as AsmMethod
 
 /**
- * Emits per-type static accessor classes under {@code me.stringdotjar.reflectaot.generated.access}.
+ * Emits `me.stringdotjar.reflectaot.generated.access.<Type>_ReflectAOT` with static helpers mirroring
+ * [ReflectApiNames] entry points specialized for one receiver type.
  */
 object AccessBytecodeEmitter {
 
@@ -17,15 +18,12 @@ object AccessBytecodeEmitter {
   private val STRING_ARRAY_TYPE = Type.getType("[Ljava/lang/String;")
   private val LIST_TYPE = Type.getType(java.util.List::class.java)
 
+  /** Stable internal name for the accessor class backing [typeInternal]. */
   fun accessInternalName(typeInternal: String): String =
     "me/stringdotjar/reflectaot/generated/access/" + typeInternal.replace('/', '_') + "ReflectAOT"
 
-  fun emit(
-    type: TypeIntrospection.IntrospectedType,
-    outputDir: File,
-    roots: Collection<File>,
-    methodBindings: List<MethodIdBinding>,
-  ) {
+  /** Writes one accessor `.class`: field/property helpers, `fields`, and `callMethod` switch for bound ids. */
+  fun emit(type: TypeIntrospection.IntrospectedType, outputDir: File, roots: Collection<File>, methodBindings: List<MethodIdBinding>) {
     val ownerType = Type.getObjectType(type.internalName)
     val accessInternal = accessInternalName(type.internalName)
     val cw = ClassWriter(ClassWriter.COMPUTE_FRAMES)
@@ -50,7 +48,7 @@ object AccessBytecodeEmitter {
     emitField(type, cw, ownerType)
     emitSetField(type, cw, ownerType)
     emitHasField(type, cw)
-    emitGetProperty(type, cw, ownerType)
+    emitProperty(type, cw, ownerType)
     emitSetProperty(type, cw, ownerType)
     emitFields(type, cw, ownerType)
     emitCallMethod(type, cw, ownerType, methodBindings, roots)
@@ -61,17 +59,8 @@ object AccessBytecodeEmitter {
     out.writeBytes(cw.toByteArray())
   }
 
-  private fun emitField(
-    type: TypeIntrospection.IntrospectedType,
-    cw: ClassWriter,
-    ownerType: Type,
-  ) {
-    val m =
-      AsmMethod(
-        "field",
-        Type.getType(Object::class.java),
-        arrayOf(ownerType, STRING_TYPE),
-      )
+  private fun emitField(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
+    val m = AsmMethod(ReflectApiNames.FIELD, Type.getType(Object::class.java), arrayOf(ownerType, STRING_TYPE))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     ga.loadArg(1)
@@ -96,17 +85,8 @@ object AccessBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitSetField(
-    type: TypeIntrospection.IntrospectedType,
-    cw: ClassWriter,
-    ownerType: Type,
-  ) {
-    val m =
-      AsmMethod(
-        "setField",
-        Type.VOID_TYPE,
-        arrayOf(ownerType, STRING_TYPE, OBJECT_TYPE),
-      )
+  private fun emitSetField(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
+    val m = AsmMethod(ReflectApiNames.SET_FIELD, Type.VOID_TYPE, arrayOf(ownerType, STRING_TYPE, OBJECT_TYPE))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     ga.loadArg(1)
@@ -133,12 +113,9 @@ object AccessBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitHasField(
-    type: TypeIntrospection.IntrospectedType,
-    cw: ClassWriter,
-  ) {
+  private fun emitHasField(type: TypeIntrospection.IntrospectedType, cw: ClassWriter) {
     val ownerType = Type.getObjectType(type.internalName)
-    val m = AsmMethod("hasField", Type.BOOLEAN_TYPE, arrayOf(ownerType, STRING_TYPE))
+    val m = AsmMethod(ReflectApiNames.HAS_FIELD, Type.BOOLEAN_TYPE, arrayOf(ownerType, STRING_TYPE))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     ga.loadArg(1)
@@ -167,17 +144,8 @@ object AccessBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitGetProperty(
-    type: TypeIntrospection.IntrospectedType,
-    cw: ClassWriter,
-    ownerType: Type,
-  ) {
-    val m =
-      AsmMethod(
-        "getProperty",
-        Type.getType(Object::class.java),
-        arrayOf(ownerType, STRING_TYPE),
-      )
+  private fun emitProperty(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
+    val m = AsmMethod(ReflectApiNames.PROPERTY, Type.getType(Object::class.java), arrayOf(ownerType, STRING_TYPE))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     ga.loadArg(1)
@@ -227,17 +195,8 @@ object AccessBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitSetProperty(
-    type: TypeIntrospection.IntrospectedType,
-    cw: ClassWriter,
-    ownerType: Type,
-  ) {
-    val m =
-      AsmMethod(
-        "setProperty",
-        Type.VOID_TYPE,
-        arrayOf(ownerType, STRING_TYPE, OBJECT_TYPE),
-      )
+  private fun emitSetProperty(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
+    val m = AsmMethod(ReflectApiNames.SET_PROPERTY, Type.VOID_TYPE, arrayOf(ownerType, STRING_TYPE, OBJECT_TYPE))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     ga.loadArg(1)
@@ -294,29 +253,19 @@ object AccessBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitCallMethod(
-    type: TypeIntrospection.IntrospectedType,
-    cw: ClassWriter,
-    ownerType: Type,
-    allBindings: List<MethodIdBinding>,
-    roots: Collection<File>,
-  ) {
+  /** Switch on numeric id → unbox args from [java.util.List], `invokevirtual` on declaring type. */
+  private fun emitCallMethod(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type, allBindings: List<MethodIdBinding>, roots: Collection<File>) {
     val bindings =
       allBindings
         .filter { JvmSubtype.isSubtype(type.internalName, it.userClassInternal, roots) }
         .sortedBy { it.id }
-    val m =
-      AsmMethod(
-        "callMethod",
-        Type.getType(Object::class.java),
-        arrayOf(ownerType, Type.INT_TYPE, LIST_TYPE),
-      )
+    val m = AsmMethod(ReflectApiNames.CALL_METHOD, Type.getType(Object::class.java), arrayOf(ownerType, Type.INT_TYPE, LIST_TYPE))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     if (bindings.isEmpty()) {
       ga.throwException(
         Type.getType(IllegalArgumentException::class.java),
-        "No Reflect.methodId bindings for " + type.internalName.replace('/', '.'),
+        "No Reflect.${ReflectApiNames.METHOD} bindings for " + type.internalName.replace('/', '.'),
       )
       ga.endMethod()
       return
@@ -352,12 +301,8 @@ object AccessBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitFields(
-    type: TypeIntrospection.IntrospectedType,
-    cw: ClassWriter,
-    ownerType: Type,
-  ) {
-    val m = AsmMethod("fields", STRING_ARRAY_TYPE, arrayOf(ownerType))
+  private fun emitFields(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
+    val m = AsmMethod(ReflectApiNames.FIELDS, STRING_ARRAY_TYPE, arrayOf(ownerType))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     val names = LinkedHashSet<String>()
@@ -377,11 +322,8 @@ object AccessBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun stringEqualsThen(
-    ga: GeneratorAdapter,
-    literal: String,
-    thenBlock: () -> Unit,
-  ) {
+  /** String compare on arg1 (name) then runs [thenBlock] if equal — builds if/eq chains. */
+  private fun stringEqualsThen(ga: GeneratorAdapter, literal: String, thenBlock: () -> Unit) {
     ga.loadArg(1)
     ga.push(literal)
     ga.invokeVirtual(STRING_TYPE, AsmMethod("equals", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE)))

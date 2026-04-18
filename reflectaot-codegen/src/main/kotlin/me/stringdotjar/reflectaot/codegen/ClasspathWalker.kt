@@ -4,16 +4,17 @@ import java.io.File
 import java.util.zip.ZipFile
 
 /**
- * Walks a classpath entry (directory tree or JAR) and invokes a callback for each {@code .class} resource.
+ * Walks a classpath entry (directory tree or JAR) and invokes a callback for each `.class` resource.
  *
- * <p>Used by ReflectAOT bytecode scanning. ASCII-only KDoc.
+ * Skips `module-info.class`. Used by [ReflectUsageScanner] to feed ASM.
  */
 object ClasspathWalker {
 
-  fun forEachClassFile(
-    root: File,
-    consumer: (internalName: String, bytes: ByteArray) -> Unit,
-  ) {
+  /**
+   * @param root a classes directory (e.g. `build/classes/java/main`) or a JAR
+   * @param consumer receives the internal class name (`com/foo/Bar` form) and raw class bytes
+   */
+  fun forEachClassFile(root: File, consumer: (internalName: String, bytes: ByteArray) -> Unit) {
     if (!root.exists()) {
       return
     }

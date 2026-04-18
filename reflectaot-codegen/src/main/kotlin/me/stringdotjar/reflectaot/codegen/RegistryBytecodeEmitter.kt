@@ -8,7 +8,8 @@ import java.io.File
 import org.objectweb.asm.commons.Method as AsmMethod
 
 /**
- * Emits {@code me.stringdotjar.reflectaot.generated.ReflectAOTRegistry} implementing {@code ReflectAOTRuntime}.
+ * Emits [REGISTRY_INTERNAL]: runtime facade that `instanceof`-dispatches to per-type accessors for
+ * field/property/`fields`, and `callMethod` with static bridges for everything else.
  */
 object RegistryBytecodeEmitter {
 
@@ -22,14 +23,13 @@ object RegistryBytecodeEmitter {
   private val RUNTIME_TYPE = Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTRuntime")
   private val DEFAULT_TYPE = Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTDefaultDispatch")
 
-  private val M_HAS_FIELD = AsmMethod("hasField", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE))
-  private val M_FIELD = AsmMethod("field", OBJECT_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE))
-  private val M_SET_FIELD = AsmMethod("setField", Type.VOID_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE, OBJECT_TYPE))
-  private val M_GET_PROPERTY = AsmMethod("getProperty", OBJECT_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE))
-  private val M_SET_PROPERTY =
-    AsmMethod("setProperty", Type.VOID_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE, OBJECT_TYPE))
-  private val M_CALL_METHOD = AsmMethod("callMethod", OBJECT_TYPE, arrayOf(OBJECT_TYPE, INT_TYPE, LIST_TYPE))
-  private val M_FIELDS = AsmMethod("fields", STRING_ARRAY_TYPE, arrayOf(OBJECT_TYPE))
+  private val M_HAS_FIELD = AsmMethod(ReflectApiNames.HAS_FIELD, Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE))
+  private val M_FIELD = AsmMethod(ReflectApiNames.FIELD, OBJECT_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE))
+  private val M_SET_FIELD = AsmMethod(ReflectApiNames.SET_FIELD, Type.VOID_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE, OBJECT_TYPE))
+  private val M_PROPERTY = AsmMethod(ReflectApiNames.PROPERTY, OBJECT_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE))
+  private val M_SET_PROPERTY = AsmMethod(ReflectApiNames.SET_PROPERTY, Type.VOID_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE, OBJECT_TYPE))
+  private val M_CALL_METHOD = AsmMethod(ReflectApiNames.CALL_METHOD, OBJECT_TYPE, arrayOf(OBJECT_TYPE, INT_TYPE, LIST_TYPE))
+  private val M_FIELDS = AsmMethod(ReflectApiNames.FIELDS, STRING_ARRAY_TYPE, arrayOf(OBJECT_TYPE))
   private val M_COPY = AsmMethod("copy", OBJECT_TYPE, arrayOf(OBJECT_TYPE))
   private val M_COMPARE = AsmMethod("compare", Type.INT_TYPE, arrayOf(OBJECT_TYPE, OBJECT_TYPE))
   private val M_COMPARE_METHODS = AsmMethod("compareMethods", Type.BOOLEAN_TYPE, arrayOf(INT_TYPE, INT_TYPE))
@@ -37,10 +37,8 @@ object RegistryBytecodeEmitter {
   private val M_IS_OBJECT = AsmMethod("isObject", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE))
   private val M_IS_ENUM = AsmMethod("isEnumValue", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE))
 
-  fun emit(
-    types: List<TypeIntrospection.IntrospectedType>,
-    outputDir: File,
-  ) {
+  /** Writes the registry class; requires [AccessBytecodeEmitter] accessors for each [types] entry first. */
+  fun emit(types: List<TypeIntrospection.IntrospectedType>, outputDir: File) {
     val sorted = types.sortedBy { it.internalName }
     val cw = ClassWriter(ClassWriter.COMPUTE_FRAMES)
     cw.visit(
@@ -70,32 +68,32 @@ object RegistryBytecodeEmitter {
 
     emitDispatchObjectStringBool(cw, M_HAS_FIELD, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
-      AsmMethod("hasField", Type.BOOLEAN_TYPE, arrayOf(owner, STRING_TYPE))
+      AsmMethod(ReflectApiNames.HAS_FIELD, Type.BOOLEAN_TYPE, arrayOf(owner, STRING_TYPE))
     }
 
     emitDispatchObjectStringObject(cw, M_FIELD, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
-      AsmMethod("field", OBJECT_TYPE, arrayOf(owner, STRING_TYPE))
+      AsmMethod(ReflectApiNames.FIELD, OBJECT_TYPE, arrayOf(owner, STRING_TYPE))
     }
 
     emitDispatchObjectStringObjectVoid(cw, M_SET_FIELD, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
-      AsmMethod("setField", Type.VOID_TYPE, arrayOf(owner, STRING_TYPE, OBJECT_TYPE))
+      AsmMethod(ReflectApiNames.SET_FIELD, Type.VOID_TYPE, arrayOf(owner, STRING_TYPE, OBJECT_TYPE))
     }
 
-    emitDispatchObjectStringObject(cw, M_GET_PROPERTY, sorted) { t ->
+    emitDispatchObjectStringObject(cw, M_PROPERTY, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
-      AsmMethod("getProperty", OBJECT_TYPE, arrayOf(owner, STRING_TYPE))
+      AsmMethod(ReflectApiNames.PROPERTY, OBJECT_TYPE, arrayOf(owner, STRING_TYPE))
     }
 
     emitDispatchObjectStringObjectVoid(cw, M_SET_PROPERTY, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
-      AsmMethod("setProperty", Type.VOID_TYPE, arrayOf(owner, STRING_TYPE, OBJECT_TYPE))
+      AsmMethod(ReflectApiNames.SET_PROPERTY, Type.VOID_TYPE, arrayOf(owner, STRING_TYPE, OBJECT_TYPE))
     }
 
     emitDispatchObjectStringArray(cw, M_FIELDS, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
-      AsmMethod("fields", STRING_ARRAY_TYPE, arrayOf(owner))
+      AsmMethod(ReflectApiNames.FIELDS, STRING_ARRAY_TYPE, arrayOf(owner))
     }
 
     emitDispatchObjectIntObject(cw, sorted)
@@ -106,12 +104,7 @@ object RegistryBytecodeEmitter {
     out.writeBytes(cw.toByteArray())
   }
 
-  private fun emitDefaultBridge(
-    cw: ClassWriter,
-    ifaceMethod: AsmMethod,
-    target: Type,
-    targetMethod: AsmMethod,
-  ) {
+  private fun emitDefaultBridge(cw: ClassWriter, ifaceMethod: AsmMethod, target: Type, targetMethod: AsmMethod) {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, ifaceMethod, null, null, cw)
     ga.visitCode()
     for (i in 0 until ifaceMethod.argumentTypes.size) {
@@ -122,12 +115,7 @@ object RegistryBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitDispatchObjectStringBool(
-    cw: ClassWriter,
-    ifaceMethod: AsmMethod,
-    sorted: List<TypeIntrospection.IntrospectedType>,
-    accessMethod: (TypeIntrospection.IntrospectedType) -> AsmMethod,
-  ) {
+  private fun emitDispatchObjectStringBool(cw: ClassWriter, ifaceMethod: AsmMethod, sorted: List<TypeIntrospection.IntrospectedType>, accessMethod: (TypeIntrospection.IntrospectedType) -> AsmMethod) {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, ifaceMethod, null, null, cw)
     ga.visitCode()
     if (sorted.isEmpty()) {
@@ -156,18 +144,13 @@ object RegistryBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitDispatchObjectStringObject(
-    cw: ClassWriter,
-    ifaceMethod: AsmMethod,
-    sorted: List<TypeIntrospection.IntrospectedType>,
-    accessMethod: (TypeIntrospection.IntrospectedType) -> AsmMethod,
-  ) {
+  private fun emitDispatchObjectStringObject(cw: ClassWriter, ifaceMethod: AsmMethod, sorted: List<TypeIntrospection.IntrospectedType>, accessMethod: (TypeIntrospection.IntrospectedType) -> AsmMethod) {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, ifaceMethod, null, null, cw)
     ga.visitCode()
     if (sorted.isEmpty()) {
       ga.throwException(
         Type.getType(UnsupportedOperationException::class.java),
-        "Reflect.field not specialized (no concrete receiver types discovered)",
+        "Reflect.${ReflectApiNames.FIELD} not specialized (no concrete receiver types discovered)",
       )
       ga.endMethod()
       return
@@ -189,23 +172,18 @@ object RegistryBytecodeEmitter {
     ga.pop()
     ga.throwException(
       Type.getType(UnsupportedOperationException::class.java),
-      "Reflect.field not specialized for receiver",
+      "Reflect.${ReflectApiNames.FIELD} not specialized for receiver",
     )
     ga.endMethod()
   }
 
-  private fun emitDispatchObjectStringObjectVoid(
-    cw: ClassWriter,
-    ifaceMethod: AsmMethod,
-    sorted: List<TypeIntrospection.IntrospectedType>,
-    accessMethod: (TypeIntrospection.IntrospectedType) -> AsmMethod,
-  ) {
+  private fun emitDispatchObjectStringObjectVoid(cw: ClassWriter, ifaceMethod: AsmMethod, sorted: List<TypeIntrospection.IntrospectedType>, accessMethod: (TypeIntrospection.IntrospectedType) -> AsmMethod) {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, ifaceMethod, null, null, cw)
     ga.visitCode()
     if (sorted.isEmpty()) {
       ga.throwException(
         Type.getType(UnsupportedOperationException::class.java),
-        "Reflect.setField not specialized (no concrete receiver types discovered)",
+        "Reflect.${ReflectApiNames.SET_FIELD} not specialized (no concrete receiver types discovered)",
       )
       ga.endMethod()
       return
@@ -228,15 +206,12 @@ object RegistryBytecodeEmitter {
     ga.pop()
     ga.throwException(
       Type.getType(UnsupportedOperationException::class.java),
-      "Reflect.setField not specialized for receiver",
+      "Reflect.${ReflectApiNames.SET_FIELD} not specialized for receiver",
     )
     ga.endMethod()
   }
 
-  private fun emitDispatchObjectIntObject(
-    cw: ClassWriter,
-    sorted: List<TypeIntrospection.IntrospectedType>,
-  ) {
+  private fun emitDispatchObjectIntObject(cw: ClassWriter, sorted: List<TypeIntrospection.IntrospectedType>) {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, M_CALL_METHOD, null, null, cw)
     ga.visitCode()
     if (sorted.isEmpty()) {
@@ -261,7 +236,7 @@ object RegistryBytecodeEmitter {
       ga.loadArg(2)
       ga.invokeStatic(
         access,
-        AsmMethod("callMethod", OBJECT_TYPE, arrayOf(owner, INT_TYPE, LIST_TYPE)),
+        AsmMethod(ReflectApiNames.CALL_METHOD, OBJECT_TYPE, arrayOf(owner, INT_TYPE, LIST_TYPE)),
       )
       ga.returnValue()
       ga.mark(next)
@@ -275,12 +250,7 @@ object RegistryBytecodeEmitter {
     ga.endMethod()
   }
 
-  private fun emitDispatchObjectStringArray(
-    cw: ClassWriter,
-    ifaceMethod: AsmMethod,
-    sorted: List<TypeIntrospection.IntrospectedType>,
-    accessMethod: (TypeIntrospection.IntrospectedType) -> AsmMethod,
-  ) {
+  private fun emitDispatchObjectStringArray(cw: ClassWriter, ifaceMethod: AsmMethod, sorted: List<TypeIntrospection.IntrospectedType>, accessMethod: (TypeIntrospection.IntrospectedType) -> AsmMethod) {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, ifaceMethod, null, null, cw)
     ga.visitCode()
     if (sorted.isEmpty()) {

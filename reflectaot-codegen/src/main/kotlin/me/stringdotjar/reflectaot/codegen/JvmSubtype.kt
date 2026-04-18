@@ -4,14 +4,15 @@ import org.objectweb.asm.ClassReader
 import org.objectweb.asm.tree.ClassNode
 import java.io.File
 
-/** JVM assignability {@code sub <: sup} using only super-class edges (ignores interfaces). */
+/**
+ * Answers `sub <: sup` using **superclass chains only** (implements-clause interfaces are ignored).
+ *
+ * Matches how `invokevirtual` resolves — sufficient for pairing `callMethod` targets with accessors.
+ */
 object JvmSubtype {
 
-  fun isSubtype(
-    subInternal: String,
-    supInternal: String,
-    roots: Collection<File>,
-  ): Boolean {
+  /** Walks `subInternal`’s superclass chain until [supInternal] or [java/lang/Object]. */
+  fun isSubtype(subInternal: String, supInternal: String, roots: Collection<File>): Boolean {
     if (supInternal == "java/lang/Object") {
       return true
     }
@@ -25,10 +26,7 @@ object JvmSubtype {
     return false
   }
 
-  private fun readSuperName(
-    internal: String,
-    roots: Collection<File>,
-  ): String? {
+  private fun readSuperName(internal: String, roots: Collection<File>): String? {
     val bytes = TypeIntrospection.loadClassBytes(internal, roots) ?: return null
     val cn = ClassNode()
     ClassReader(bytes).accept(cn, ClassReader.SKIP_DEBUG + ClassReader.SKIP_FRAMES)

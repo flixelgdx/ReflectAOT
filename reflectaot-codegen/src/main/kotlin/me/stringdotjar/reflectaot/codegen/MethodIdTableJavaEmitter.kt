@@ -2,13 +2,14 @@ package me.stringdotjar.reflectaot.codegen
 
 import java.io.File
 
-/** Java source mirror of [MethodIdTableBytecodeEmitter] for {@link ReflectAOTOutput#JAVA}. */
+/**
+ * Same surface as [MethodIdTableBytecodeEmitter], but emits `.java` for pipelines that consume
+ * sources instead of ASM output.
+ */
 object MethodIdTableJavaEmitter {
 
-  fun emit(
-    javaOut: File,
-    bindings: List<MethodIdBinding>,
-  ) {
+  /** Writes `ReflectAOTMethodIdTable.java` implementing [me.stringdotjar.reflectaot.ReflectAOTMethodIdResolver]. */
+  fun emit(javaOut: File, bindings: List<MethodIdBinding>) {
     val pkg = "me.stringdotjar.reflectaot.generated"
     val dir = File(javaOut, pkg.replace('.', '/'))
     dir.mkdirs()
@@ -25,7 +26,7 @@ object MethodIdTableJavaEmitter {
     sb.append("  public ReflectMethodId resolve(Class<?> clazz, String name, String descriptor) {\n")
     if (sorted.isEmpty()) {
       sb.append(
-        "    throw new IllegalArgumentException(\"No Reflect.methodId call sites were generated; remove Reflect.methodId calls or run codegen after adding them.\");\n",
+        "    throw new IllegalArgumentException(\"No Reflect.${ReflectApiNames.METHOD} call sites were generated; remove Reflect.${ReflectApiNames.METHOD} calls or run codegen after adding them.\");\n",
       )
     } else {
       for (b in sorted) {
@@ -37,14 +38,14 @@ object MethodIdTableJavaEmitter {
         sb.append("    }\n")
       }
       sb.append(
-        "    throw new IllegalArgumentException(\"Unknown Reflect.methodId (class, name, descriptor) combination\");\n",
+        "    throw new IllegalArgumentException(\"Unknown Reflect.${ReflectApiNames.METHOD} (class, name, descriptor) combination\");\n",
       )
     }
     sb.append("  }\n\n")
     sb.append("  public ReflectMethodId resolve(Class<?> clazz, String name) {\n")
     if (sorted.isEmpty()) {
       sb.append(
-        "    throw new IllegalArgumentException(\"No Reflect.methodId call sites were generated; remove Reflect.methodId calls or run codegen after adding them.\");\n",
+        "    throw new IllegalArgumentException(\"No Reflect.${ReflectApiNames.METHOD} call sites were generated; remove Reflect.${ReflectApiNames.METHOD} calls or run codegen after adding them.\");\n",
       )
     } else {
       sb.append("    int matches = 0;\n")
@@ -54,7 +55,7 @@ object MethodIdTableJavaEmitter {
         sb.append("    if (clazz == ").append(fq).append(" && \"").append(escape(b.name)).append("\".equals(name)) {\n")
         sb.append("      if (matches != 0) {\n")
         sb.append(
-          "        throw new IllegalArgumentException(\"Ambiguous Reflect.methodId (class, name): multiple overloads share that name; use Reflect.methodId(Class, String, String) with a JVM descriptor.\");\n",
+          "        throw new IllegalArgumentException(\"Ambiguous Reflect.${ReflectApiNames.METHOD} (class, name): multiple overloads share that name; use Reflect.${ReflectApiNames.METHOD}(Class, String, String) with a JVM descriptor.\");\n",
         )
         sb.append("      }\n")
         sb.append("      matches = 1;\n")
@@ -63,7 +64,7 @@ object MethodIdTableJavaEmitter {
       }
       sb.append("    if (matches == 0) {\n")
       sb.append(
-        "      throw new IllegalArgumentException(\"Unknown Reflect.methodId (class, name); use Reflect.methodId(Class, String, String) with a JVM descriptor.\");\n",
+        "      throw new IllegalArgumentException(\"Unknown Reflect.${ReflectApiNames.METHOD} (class, name); use Reflect.${ReflectApiNames.METHOD}(Class, String, String) with a JVM descriptor.\");\n",
       )
       sb.append("    }\n")
       sb.append("    return found;\n")
@@ -74,7 +75,7 @@ object MethodIdTableJavaEmitter {
 
   private fun escape(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
 
-  /** Renders a {@code .class} literal or {@code int.class} style expression for {@code Reflect.methodId}. */
+  /** Renders a `.class` literal or `int.class`-style primitive class literal for use in emitted Java. */
   private fun internalToClassLiteralSource(internal: String): String {
     if (internal.startsWith("[")) {
       var s = internal

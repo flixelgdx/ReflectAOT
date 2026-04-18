@@ -82,10 +82,6 @@ import java.util.List;
  * // Write a property value via JavaBean conventions.
  * Reflect.setProperty(o, "property", value);
  * }</pre>
- *
- * @see ReflectAOTServices
- * @see ReflectAOTRuntime
- * @see me.stringdotjar.reflectaot.generated.ReflectAOTBootstrap
  */
 public final class Reflect {
 

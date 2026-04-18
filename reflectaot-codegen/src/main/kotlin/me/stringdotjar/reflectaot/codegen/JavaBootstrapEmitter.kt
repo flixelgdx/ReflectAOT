@@ -2,9 +2,10 @@ package me.stringdotjar.reflectaot.codegen
 
 import java.io.File
 
-/** Emits Java source for a bootstrap that installs {@link me.stringdotjar.reflectaot.generated.ReflectAOTRegistry}. */
+/** Java-source twin of [BootstrapBytecodeEmitter] when using [ReflectAOTOutput.JAVA] without bytecode bootstrap. */
 object JavaBootstrapEmitter {
 
+  /** Writes `ReflectAOTBootstrap.java` beside other generated sources. */
   fun emit(outputDir: File) {
     outputDir.mkdirs()
     val pkg = File(outputDir, "me/stringdotjar/reflectaot/generated")

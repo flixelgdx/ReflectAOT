@@ -4,16 +4,13 @@ import org.objectweb.asm.Type
 import java.io.File
 
 /**
- * Emits Java 7-compatible sources mirroring the bytecode accessors and registry (for GWT-style pipelines).
+ * Emits Java 7-compatible sources mirroring [AccessBytecodeEmitter] / [RegistryBytecodeEmitter] for
+ * toolchains that require `.java` (e.g. GWT). Signatures align with [ReflectApiNames].
  */
 object JavaMirrorEmitter {
 
-  fun emit(
-    javaOut: File,
-    types: List<TypeIntrospection.IntrospectedType>,
-    methodBindings: List<MethodIdBinding>,
-    roots: Collection<File>,
-  ) {
+  /** Writes `*_ReflectAOT.java` per type plus `ReflectAOTRegistry.java`. */
+  fun emit(javaOut: File, types: List<TypeIntrospection.IntrospectedType>, methodBindings: List<MethodIdBinding>, roots: Collection<File>) {
     val sorted = types.sortedBy { it.internalName }
     for (t in sorted) {
       emitAccessor(javaOut, t, methodBindings, roots)
@@ -26,12 +23,7 @@ object JavaMirrorEmitter {
   private fun accessClassFqcn(internalName: String): String =
     fqcn(AccessBytecodeEmitter.accessInternalName(internalName))
 
-  private fun emitAccessor(
-    javaOut: File,
-    t: TypeIntrospection.IntrospectedType,
-    methodBindings: List<MethodIdBinding>,
-    roots: Collection<File>,
-  ) {
+  private fun emitAccessor(javaOut: File, t: TypeIntrospection.IntrospectedType, methodBindings: List<MethodIdBinding>, roots: Collection<File>) {
     val fq = fqcn(t.internalName)
     val accessFq = accessClassFqcn(t.internalName)
     val pkg = accessFq.substring(0, accessFq.lastIndexOf('.'))
@@ -49,7 +41,7 @@ object JavaMirrorEmitter {
     sb.append(renderField(fq, t))
     sb.append(renderSetField(fq, t))
     sb.append(renderHasField(fq, t))
-    sb.append(renderGetProperty(fq, t))
+    sb.append(renderProperty(fq, t))
     sb.append(renderSetProperty(fq, t))
     sb.append(renderFields(fq, t))
     sb.append(renderCallMethod(fq, t, methodBindings, roots))
@@ -59,12 +51,9 @@ object JavaMirrorEmitter {
     File(dir, "$simple.java").writeText(sb.toString())
   }
 
-  private fun renderField(
-    fq: String,
-    t: TypeIntrospection.IntrospectedType,
-  ): String {
+  private fun renderField(fq: String, t: TypeIntrospection.IntrospectedType): String {
     val sb = StringBuilder()
-    sb.append("  public static Object field(").append(fq).append(" o, String name) {\n")
+    sb.append("  public static Object ").append(ReflectApiNames.FIELD).append("(").append(fq).append(" o, String name) {\n")
     sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
     for ((name, desc) in t.fields) {
       sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
@@ -76,12 +65,9 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  private fun renderSetField(
-    fq: String,
-    t: TypeIntrospection.IntrospectedType,
-  ): String {
+  private fun renderSetField(fq: String, t: TypeIntrospection.IntrospectedType): String {
     val sb = StringBuilder()
-    sb.append("  public static void setField(").append(fq).append(" o, String name, Object value) {\n")
+    sb.append("  public static void ").append(ReflectApiNames.SET_FIELD).append("(").append(fq).append(" o, String name, Object value) {\n")
     sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
     for ((name, desc) in t.fields) {
       sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
@@ -99,15 +85,12 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  private fun renderHasField(
-    fq: String,
-    t: TypeIntrospection.IntrospectedType,
-  ): String {
+  private fun renderHasField(fq: String, t: TypeIntrospection.IntrospectedType): String {
     val names = LinkedHashSet<String>()
     t.fields.keys.forEach { names.add(it) }
     t.properties.forEach { names.add(it.name) }
     val sb = StringBuilder()
-    sb.append("  public static boolean hasField(").append(fq).append(" o, String name) {\n")
+    sb.append("  public static boolean ").append(ReflectApiNames.HAS_FIELD).append("(").append(fq).append(" o, String name) {\n")
     sb.append("    if (name == null) return false;\n")
     for (n in names) {
       sb.append("    if (\"").append(escape(n)).append("\".equals(name)) return true;\n")
@@ -117,12 +100,9 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  private fun renderGetProperty(
-    fq: String,
-    t: TypeIntrospection.IntrospectedType,
-  ): String {
+  private fun renderProperty(fq: String, t: TypeIntrospection.IntrospectedType): String {
     val sb = StringBuilder()
-    sb.append("  public static Object getProperty(").append(fq).append(" o, String name) {\n")
+    sb.append("  public static Object ").append(ReflectApiNames.PROPERTY).append("(").append(fq).append(" o, String name) {\n")
     sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
     for (p in t.properties) {
       sb.append("    if (\"").append(escape(p.name)).append("\".equals(name)) {\n")
@@ -149,12 +129,9 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  private fun renderSetProperty(
-    fq: String,
-    t: TypeIntrospection.IntrospectedType,
-  ): String {
+  private fun renderSetProperty(fq: String, t: TypeIntrospection.IntrospectedType): String {
     val sb = StringBuilder()
-    sb.append("  public static void setProperty(").append(fq).append(" o, String name, Object value) {\n")
+    sb.append("  public static void ").append(ReflectApiNames.SET_PROPERTY).append("(").append(fq).append(" o, String name, Object value) {\n")
     sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
     for (p in t.properties) {
       sb.append("    if (\"").append(escape(p.name)).append("\".equals(name)) {\n")
@@ -217,15 +194,12 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  private fun renderFields(
-    fq: String,
-    t: TypeIntrospection.IntrospectedType,
-  ): String {
+  private fun renderFields(fq: String, t: TypeIntrospection.IntrospectedType): String {
     val names = LinkedHashSet<String>()
     t.fields.keys.forEach { names.add(it) }
     t.properties.forEach { names.add(it.name) }
     val sb = StringBuilder()
-    sb.append("  public static String[] fields(").append(fq).append(" o) {\n")
+    sb.append("  public static String[] ").append(ReflectApiNames.FIELDS).append("(").append(fq).append(" o) {\n")
     if (names.isEmpty()) {
       sb.append("    return me.stringdotjar.reflectaot.ReflectAOTDefaultDispatch.emptyStringArray();\n")
     } else {
@@ -244,21 +218,16 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  private fun renderCallMethod(
-    fq: String,
-    t: TypeIntrospection.IntrospectedType,
-    allBindings: List<MethodIdBinding>,
-    roots: Collection<File>,
-  ): String {
+  private fun renderCallMethod(fq: String, t: TypeIntrospection.IntrospectedType, allBindings: List<MethodIdBinding>, roots: Collection<File>): String {
     val bindings =
       allBindings
         .filter { JvmSubtype.isSubtype(t.internalName, it.userClassInternal, roots) }
         .sortedBy { it.id }
     val sb = StringBuilder()
-    sb.append("  public static Object callMethod(").append(fq).append(" o, int methodId, java.util.List<?> args) {\n")
+    sb.append("  public static Object ").append(ReflectApiNames.CALL_METHOD).append("(").append(fq).append(" o, int methodId, java.util.List<?> args) {\n")
     if (bindings.isEmpty()) {
       sb.append(
-        "    throw new IllegalArgumentException(\"No Reflect.methodId bindings for " + fq + "\");\n",
+        "    throw new IllegalArgumentException(\"No Reflect.${ReflectApiNames.METHOD} bindings for " + fq + "\");\n",
       )
       sb.append("  }\n\n")
       return sb.toString()
@@ -302,10 +271,7 @@ object JavaMirrorEmitter {
       else -> "java.lang.Object"
     }
 
-  private fun unboxArgFromList(
-    expr: String,
-    t: Type,
-  ): String =
+  private fun unboxArgFromList(expr: String, t: Type): String =
     when (t.sort) {
       Type.BOOLEAN -> "((Boolean) " + expr + ").booleanValue()"
       Type.CHAR -> "(char) ((Character) " + expr + ").charValue()"
@@ -319,11 +285,12 @@ object JavaMirrorEmitter {
       else -> "(" + fqDesc(t.descriptor) + ") " + expr
     }
 
+  /** Registry `callMethod` — chains `instanceof` to typed accessor static methods. */
   private fun renderRegistryCallMethod(sorted: List<TypeIntrospection.IntrospectedType>): String {
     val sb = StringBuilder()
-    sb.append("  public Object callMethod(Object o, int methodId, java.util.List<?> args) {\n")
+    sb.append("  public Object ").append(ReflectApiNames.CALL_METHOD).append("(Object o, int methodId, java.util.List<?> args) {\n")
     if (sorted.isEmpty()) {
-      sb.append("    return ReflectAOTDefaultDispatch.callMethod(o, methodId, args);\n")
+      sb.append("    return ReflectAOTDefaultDispatch.").append(ReflectApiNames.CALL_METHOD).append("(o, methodId, args);\n")
       sb.append("  }\n\n")
       return sb.toString()
     }
@@ -331,18 +298,15 @@ object JavaMirrorEmitter {
       val fq = fqcn(t.internalName)
       val acc = accessClassFqcn(t.internalName)
       sb.append("    if (o instanceof ").append(fq).append(") {\n")
-      sb.append("      return ").append(acc).append(".callMethod((").append(fq).append(") o, methodId, args);\n")
+      sb.append("      return ").append(acc).append(".").append(ReflectApiNames.CALL_METHOD).append("((").append(fq).append(") o, methodId, args);\n")
       sb.append("    }\n")
     }
-    sb.append("    return ReflectAOTDefaultDispatch.callMethod(o, methodId, args);\n")
+    sb.append("    return ReflectAOTDefaultDispatch.").append(ReflectApiNames.CALL_METHOD).append("(o, methodId, args);\n")
     sb.append("  }\n\n")
     return sb.toString()
   }
 
-  private fun emitRegistry(
-    javaOut: File,
-    sorted: List<TypeIntrospection.IntrospectedType>,
-  ) {
+  private fun emitRegistry(javaOut: File, sorted: List<TypeIntrospection.IntrospectedType>) {
     val pkg = "me.stringdotjar.reflectaot.generated"
     val dir = File(javaOut, pkg.replace('.', '/'))
     dir.mkdirs()
@@ -367,23 +331,18 @@ object JavaMirrorEmitter {
     sb.append(renderRegistryCallMethod(sorted))
     sb.append("  public Object copy(Object o) { return ReflectAOTDefaultDispatch.copy(o); }\n\n")
 
-    sb.append(renderRegistryDispatch("hasField", "boolean", sorted, "hasField"))
-    sb.append(renderRegistryDispatch("field", "Object", sorted, "field"))
-    sb.append(renderRegistryDispatchVoid("setField", sorted, "setField"))
-    sb.append(renderRegistryDispatch("getProperty", "Object", sorted, "getProperty"))
-    sb.append(renderRegistryDispatchVoid("setProperty", sorted, "setProperty"))
+    sb.append(renderRegistryDispatch(ReflectApiNames.HAS_FIELD, "boolean", sorted, ReflectApiNames.HAS_FIELD))
+    sb.append(renderRegistryDispatch(ReflectApiNames.FIELD, "Object", sorted, ReflectApiNames.FIELD))
+    sb.append(renderRegistryDispatchVoid(ReflectApiNames.SET_FIELD, sorted, ReflectApiNames.SET_FIELD))
+    sb.append(renderRegistryDispatch(ReflectApiNames.PROPERTY, "Object", sorted, ReflectApiNames.PROPERTY))
+    sb.append(renderRegistryDispatchVoid(ReflectApiNames.SET_PROPERTY, sorted, ReflectApiNames.SET_PROPERTY))
     sb.append(renderRegistryFields(sorted))
 
     sb.append("}\n")
     File(dir, "ReflectAOTRegistry.java").writeText(sb.toString())
   }
 
-  private fun renderRegistryDispatch(
-    name: String,
-    ret: String,
-    sorted: List<TypeIntrospection.IntrospectedType>,
-    accessMethod: String,
-  ): String {
+  private fun renderRegistryDispatch(name: String, ret: String, sorted: List<TypeIntrospection.IntrospectedType>, accessMethod: String): String {
     val sb = StringBuilder()
     sb
       .append("  public ")
@@ -432,11 +391,7 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  private fun renderRegistryDispatchVoid(
-    name: String,
-    sorted: List<TypeIntrospection.IntrospectedType>,
-    accessMethod: String,
-  ): String {
+  private fun renderRegistryDispatchVoid(name: String, sorted: List<TypeIntrospection.IntrospectedType>, accessMethod: String): String {
     val sb = StringBuilder()
     sb.append("  public void ").append(name).append("(Object o, String name, Object value) {\n")
     if (sorted.isEmpty()) {
@@ -475,7 +430,7 @@ object JavaMirrorEmitter {
 
   private fun renderRegistryFields(sorted: List<TypeIntrospection.IntrospectedType>): String {
     val sb = StringBuilder()
-    sb.append("  public String[] fields(Object o) {\n")
+    sb.append("  public String[] ").append(ReflectApiNames.FIELDS).append("(Object o) {\n")
     if (sorted.isEmpty()) {
       sb.append("    return me.stringdotjar.reflectaot.ReflectAOTDefaultDispatch.emptyStringArray();\n")
       sb.append("  }\n")
@@ -488,7 +443,9 @@ object JavaMirrorEmitter {
       sb
         .append("      return ")
         .append(acc)
-        .append(".fields((")
+        .append(".")
+        .append(ReflectApiNames.FIELDS)
+        .append("((")
         .append(fq)
         .append(") o);\n")
       sb.append("    }\n")
@@ -500,10 +457,7 @@ object JavaMirrorEmitter {
 
   private fun escape(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
 
-  private fun boxRead(
-    expr: String,
-    desc: String,
-  ): String =
+  private fun boxRead(expr: String, desc: String): String =
     when (desc) {
       "I" -> "Integer.valueOf(" + expr + ")"
       "Z" -> "Boolean.valueOf(" + expr + ")"
@@ -516,10 +470,7 @@ object JavaMirrorEmitter {
       else -> expr
     }
 
-  private fun unboxAssign(
-    value: String,
-    desc: String,
-  ): String =
+  private fun unboxAssign(value: String, desc: String): String =
     when (desc) {
       "I" -> "((Number) " + value + ").intValue()"
       "Z" -> "((Boolean) " + value + ").booleanValue()"

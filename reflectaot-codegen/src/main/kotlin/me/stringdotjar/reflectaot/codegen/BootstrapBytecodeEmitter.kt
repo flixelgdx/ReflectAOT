@@ -8,8 +8,8 @@ import org.objectweb.asm.commons.GeneratorAdapter
 import org.objectweb.asm.commons.Method
 
 /**
- * Emits `me.stringdotjar.reflectaot.generated.ReflectAOTBootstrap` with a static initializer that
- * installs [me.stringdotjar.reflectaot.generated.ReflectAOTRegistry] via [me.stringdotjar.reflectaot.ReflectAOTServices].
+ * Emits `ReflectAOTBootstrap`: loads before user code via `Reflect`’s static initializer and pushes
+ * [MethodIdTableBytecodeEmitter.TABLE_INTERNAL] plus the registry into [me.stringdotjar.reflectaot.ReflectAOTServices].
  */
 object BootstrapBytecodeEmitter {
 
@@ -19,19 +19,10 @@ object BootstrapBytecodeEmitter {
   private val METHOD_TABLE_TYPE = Type.getObjectType(MethodIdTableBytecodeEmitter.TABLE_INTERNAL)
   private val METHOD_ID_RESOLVER_TYPE = Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTMethodIdResolver")
   private val RUNTIME_TYPE = Type.getObjectType("me/stringdotjar/reflectaot/ReflectAOTRuntime")
-  private val INSTALL =
-    Method(
-      "install",
-      Type.VOID_TYPE,
-      arrayOf(RUNTIME_TYPE),
-    )
-  private val INSTALL_METHOD_IDS =
-    Method(
-      "installMethodIds",
-      Type.VOID_TYPE,
-      arrayOf(METHOD_ID_RESOLVER_TYPE),
-    )
+  private val INSTALL = Method("install", Type.VOID_TYPE, arrayOf(RUNTIME_TYPE))
+  private val INSTALL_METHOD_IDS = Method("installMethodIds", Type.VOID_TYPE, arrayOf(METHOD_ID_RESOLVER_TYPE))
 
+  /** Writes `ReflectAOTBootstrap.class`. */
   fun emit(outputDir: File) {
     outputDir.mkdirs()
     val cw = ClassWriter(ClassWriter.COMPUTE_FRAMES)

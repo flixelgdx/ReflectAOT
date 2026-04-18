@@ -8,10 +8,13 @@ import java.io.File
 import java.util.zip.ZipFile
 
 /**
- * Loads class metadata from bytecode for ReflectAOT accessor generation.
+ * Parses `.class` bytes into field lists, JavaBeans-style properties, and public instance methods.
+ *
+ * Superclasses are walked so subclass fields shadow correctly and override-ordered methods are collected.
  */
 object TypeIntrospection {
 
+  /** Aggregates getter/setter metadata for JavaBeans-backed `Reflect.property` / `Reflect.setProperty`. */
   data class BeanProperty(
     val name: String,
     val getterName: String?,
@@ -21,12 +24,14 @@ object TypeIntrospection {
     val fieldName: String?,
   )
 
+  /** One override-retained public instance method (first declaring type wins per name+descriptor). */
   data class InstanceMethod(
     val name: String,
     val descriptor: String,
     val declaringInternal: String,
   )
 
+  /** Snapshot used by accessors, registry dispatch, and `Reflect.method` validation. */
   data class IntrospectedType(
     val internalName: String,
     /** Declared instance field names (subclass before superclass) mapped to field descriptors. */
@@ -36,10 +41,10 @@ object TypeIntrospection {
     val instanceMethods: List<InstanceMethod>,
   )
 
-  fun load(
-    internalName: String,
-    roots: Collection<File>,
-  ): IntrospectedType? {
+  /**
+   * Loads [internalName] from [roots], merges superclass metadata, or returns null if bytes are missing.
+   */
+  fun load(internalName: String, roots: Collection<File>): IntrospectedType? {
     val bytes = loadClassBytes(internalName, roots) ?: return null
     val start = ClassNode()
     ClassReader(bytes).accept(start, ClassReader.SKIP_DEBUG)
@@ -145,10 +150,8 @@ object TypeIntrospection {
     )
   }
 
-  private fun buildSuperChain(
-    start: ClassNode,
-    roots: Collection<File>,
-  ): List<ClassNode> {
+  /** Superclass-first chain from [start] toward [java/lang/Object] (object itself not included last). */
+  private fun buildSuperChain(start: ClassNode, roots: Collection<File>): List<ClassNode> {
     val out = ArrayList<ClassNode>()
     var cur: ClassNode? = start
     while (cur != null && cur.name != "java/lang/Object") {
@@ -162,10 +165,7 @@ object TypeIntrospection {
     return out
   }
 
-  private fun inferFieldForProperty(
-    prop: String,
-    fieldNames: Set<String>,
-  ): String? {
+  private fun inferFieldForProperty(prop: String, fieldNames: Set<String>): String? {
     if (fieldNames.contains(prop)) {
       return prop
     }
@@ -183,10 +183,8 @@ object TypeIntrospection {
     return Character.toLowerCase(c0) + s.substring(1)
   }
 
-  fun loadClassBytes(
-    internalName: String,
-    roots: Collection<File>,
-  ): ByteArray? {
+  /** Locates `internalName.class` under a directory root or inside a JAR entry. */
+  fun loadClassBytes(internalName: String, roots: Collection<File>): ByteArray? {
     val relPath = internalName + ".class"
     for (root in roots) {
       if (root.isDirectory) {

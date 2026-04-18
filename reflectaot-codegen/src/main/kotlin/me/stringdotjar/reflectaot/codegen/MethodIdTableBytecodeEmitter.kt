@@ -9,11 +9,12 @@ import java.io.File
 import org.objectweb.asm.commons.Method as AsmMethod
 
 /**
- * Emits {@code me.stringdotjar.reflectaot.generated.ReflectAOTMethodIdTable} implementing {@code
- * ReflectAOTMethodIdResolver}.
+ * Emits [TABLE_INTERNAL]: static `ReflectMethodId` constants plus `resolve` bridges installed via
+ * [me.stringdotjar.reflectaot.ReflectAOTServices.installMethodIds].
  */
 object MethodIdTableBytecodeEmitter {
 
+  /** Internal name of the generated resolver class. */
   const val TABLE_INTERNAL = "me/stringdotjar/reflectaot/generated/ReflectAOTMethodIdTable"
 
   private val OBJECT_TYPE = Type.getType(Object::class.java)
@@ -25,23 +26,11 @@ object MethodIdTableBytecodeEmitter {
 
   private val M_INIT = Method.getMethod("void <init> ()")
   private val M_REFLECT_METHOD_ID_INIT = AsmMethod("<init>", Type.VOID_TYPE, arrayOf(Type.INT_TYPE))
-  private val M_RESOLVE =
-    AsmMethod(
-      "resolve",
-      METHOD_ID_TYPE,
-      arrayOf(CLASS_TYPE, STRING_TYPE, STRING_TYPE),
-    )
-  private val M_RESOLVE_CLASS_NAME =
-    AsmMethod(
-      "resolve",
-      METHOD_ID_TYPE,
-      arrayOf(CLASS_TYPE, STRING_TYPE),
-    )
+  private val M_RESOLVE = AsmMethod("resolve", METHOD_ID_TYPE, arrayOf(CLASS_TYPE, STRING_TYPE, STRING_TYPE))
+  private val M_RESOLVE_CLASS_NAME = AsmMethod("resolve", METHOD_ID_TYPE, arrayOf(CLASS_TYPE, STRING_TYPE))
 
-  fun emit(
-    outputDir: File,
-    bindings: List<MethodIdBinding>,
-  ) {
+  /** Writes the table class under [outputDir] using one static field per binding id. */
+  fun emit(outputDir: File, bindings: List<MethodIdBinding>) {
     val cw = ClassWriter(ClassWriter.COMPUTE_FRAMES)
     cw.visit(
       Opcodes.V1_8,
@@ -93,7 +82,7 @@ object MethodIdTableBytecodeEmitter {
       if (sorted.isEmpty()) {
         ga.throwException(
           Type.getType(IllegalArgumentException::class.java),
-          "No Reflect.methodId call sites were generated; remove Reflect.methodId calls or run codegen after adding them.",
+          "No Reflect.${ReflectApiNames.METHOD} call sites were generated; remove Reflect.${ReflectApiNames.METHOD} calls or run codegen after adding them.",
         )
         ga.endMethod()
       } else {
@@ -119,7 +108,7 @@ object MethodIdTableBytecodeEmitter {
         }
         ga.throwException(
           Type.getType(IllegalArgumentException::class.java),
-          "Unknown Reflect.methodId (class, name, descriptor) combination",
+          "Unknown Reflect.${ReflectApiNames.METHOD} (class, name, descriptor) combination",
         )
         ga.endMethod()
       }
@@ -136,19 +125,16 @@ object MethodIdTableBytecodeEmitter {
   private fun fieldName(id: Int): String = "M$id"
 
   /**
-   * {@code resolve(Class, String)}: match class + name; if more than one binding matches at
-   * runtime (multiple overloads of the same name), throw so callers use the 3-arg overload.
+   * `resolve(Class, String)`: unique binding wins; zero matches → unknown; two matches → ambiguous
+   * (different overloads share the name — caller must use the three-arg `Reflect.method` overload).
    */
-  private fun emitResolveClassAndNameOnly(
-    cw: ClassWriter,
-    sorted: List<MethodIdBinding>,
-  ) {
+  private fun emitResolveClassAndNameOnly(cw: ClassWriter, sorted: List<MethodIdBinding>) {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, M_RESOLVE_CLASS_NAME, null, null, cw)
     ga.visitCode()
     if (sorted.isEmpty()) {
       ga.throwException(
         Type.getType(IllegalArgumentException::class.java),
-        "No Reflect.methodId call sites were generated; remove Reflect.methodId calls or run codegen after adding them.",
+        "No Reflect.${ReflectApiNames.METHOD} call sites were generated; remove Reflect.${ReflectApiNames.METHOD} calls or run codegen after adding them.",
       )
       ga.endMethod()
       return
@@ -185,12 +171,12 @@ object MethodIdTableBytecodeEmitter {
     ga.mark(notFound)
     ga.throwException(
       Type.getType(IllegalArgumentException::class.java),
-      "Unknown Reflect.methodId (class, name); use Reflect.methodId(Class, String, String) with a JVM descriptor.",
+      "Unknown Reflect.${ReflectApiNames.METHOD} (class, name); use Reflect.${ReflectApiNames.METHOD}(Class, String, String) with a JVM descriptor.",
     )
     ga.mark(ambiguous)
     ga.throwException(
       Type.getType(IllegalArgumentException::class.java),
-      "Ambiguous Reflect.methodId (class, name): multiple overloads share that name; use Reflect.methodId(Class, String, String) with a JVM descriptor.",
+      "Ambiguous Reflect.${ReflectApiNames.METHOD} (class, name): multiple overloads share that name; use Reflect.${ReflectApiNames.METHOD}(Class, String, String) with a JVM descriptor.",
     )
     ga.endMethod()
   }

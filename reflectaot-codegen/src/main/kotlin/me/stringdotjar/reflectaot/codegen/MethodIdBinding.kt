@@ -1,6 +1,9 @@
 package me.stringdotjar.reflectaot.codegen
 
-/** One build-resolved entry for {@code Reflect.methodId} and generated {@code callMethod} dispatch. */
+/**
+ * One build-resolved `Reflect.method(...)` call site: stable id, declaring type for `invokevirtual`,
+ * and JVM descriptor string for overload resolution.
+ */
 data class MethodIdBinding(
   val id: Int,
   val userClassInternal: String,
