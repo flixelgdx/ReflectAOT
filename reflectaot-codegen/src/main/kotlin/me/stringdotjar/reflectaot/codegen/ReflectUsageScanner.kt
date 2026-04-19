@@ -22,35 +22,58 @@ import org.objectweb.asm.tree.analysis.BasicVerifier
 import org.objectweb.asm.tree.analysis.Frame
 import java.io.File
 
-/** One scanned `Reflect.<name>(…)` site; [reflectMethod] matches [ReflectApiNames] entries. */
+/**
+ * One scanned static `Reflect` call site.
+ *
+ * @property reflectMethod JVM name on [ReflectApiNames], for example `"field"` or `"callMethod"`.
+ * @property receiverInternalOrNull Receiver type internal name when inferred, or null if erased to `java/lang/Object`.
+ * @property nameLiteralOrNull Extracted member name string constant when applicable, otherwise null (for example [ReflectApiNames.CALL_METHOD]).
+ */
 data class ReflectCallSite(
   val reflectMethod: String,
   val receiverInternalOrNull: String?,
   val nameLiteralOrNull: String?,
 )
 
-/** Parsed `Reflect.method(Class, …)` inputs (descriptor optional when two-arg overload used). */
+/**
+ * Parsed operands for `Reflect.method(Class<?>, …)` near an `invokestatic`.
+ *
+ * @property ownerClassInternalOrNull JVM internal name from a class literal (`Foo` → `com/example/Foo`), or null when parsing failed.
+ * @property nameOrNull Method name string literal, or null when parsing failed.
+ * @property descriptorOrNull JVM method descriptor literal for the three-argument overload, or null for the two-argument overload (filled at codegen when unique).
+ */
 data class MethodIdCallSite(
   val ownerClassInternalOrNull: String?,
   val nameOrNull: String?,
   val descriptorOrNull: String?,
 )
 
-/** Combined output of [scanClasspath]. */
+/**
+ * Aggregate result of [ReflectUsageScanner.scanClasspath].
+ *
+ * @property reflectCalls Sites for field-like and dispatch APIs.
+ * @property methodIdCalls Parsed `Reflect.method` sites.
+ */
 data class ClasspathScanResult(
   val reflectCalls: List<ReflectCallSite>,
   val methodIdCalls: List<MethodIdCallSite>,
 )
 
 /**
- * Walks compiled classes and finds `invokestatic` calls to [ReflectApiNames.REFLECT_INTERNAL].
+ * Walks compiled classes and finds `invokestatic` targets on [ReflectApiNames.REFLECT_INTERNAL].
  *
- * For field/property helpers it records the **reflect API name** (e.g. [ReflectApiNames.FIELD]) and,
- * when possible, the JVM internal name of the **first argument** (receiver) and a **string literal**
- * member name. For [ReflectApiNames.METHOD] it parses class/name/(descriptor) from nearby bytecode.
+ * Field and property helpers record the API name and, when possible, the first-argument receiver type and a string literal member name.
+ * For [ReflectApiNames.METHOD], operands are decoded from bytecode immediately before the call.
  */
 object ReflectUsageScanner {
 
+  /**
+   * Scans every classpath root and aggregates all discovered sites.
+   *
+   * @param roots Directories (`build/classes/...`) and/or JAR files to walk.
+   * @param excludePackagePrefixes Dotted prefixes; matching internal names are skipped (see [ReflectClasspathScanDefaults]).
+   * @return Lists of reflect calls and method-id extractions merged from all roots.
+   */
   fun scanClasspath(roots: Collection<File>, excludePackagePrefixes: List<String>): ClasspathScanResult {
     val reflectCalls = ArrayList<ReflectCallSite>()
     val methodIdCalls = ArrayList<MethodIdCallSite>()
@@ -67,7 +90,13 @@ object ReflectUsageScanner {
     return ClasspathScanResult(reflectCalls, methodIdCalls)
   }
 
-  /** True when [internalName]’s dotted form starts with any configured exclude prefix (JDK, Kotlin, …). */
+  /**
+   * Returns whether the given internal name falls under any exclude prefix.
+   *
+   * @param internalName JVM slash-separated internal class name (`com/example/Foo`).
+   * @param excludePackagePrefixes Candidate dotted prefixes such as `"java."`.
+   * @return True if scanning should skip this class entirely.
+   */
   fun shouldExclude(internalName: String, excludePackagePrefixes: List<String>): Boolean {
     val dotted = internalName.replace('/', '.')
     for (p in excludePackagePrefixes) {
@@ -79,10 +108,12 @@ object ReflectUsageScanner {
   }
 
   /**
-   * Parses one class file and returns all discovered `Reflect` call sites.
+   * Parses a single `.class` file buffer for `Reflect` usages.
    *
-   * Uses ASM’s [BasicVerifier] frames to type the receiver slot when possible; on analysis failure
-   * returns empty lists for that class (conservative).
+   * Uses ASM’s [BasicVerifier]; if analysis fails for a method, that method contributes nothing (conservative).
+   *
+   * @param bytes Raw class file bytes.
+   * @return Pair of reflect-call sites and `Reflect.method` sites for this class.
    */
   fun scanClass(bytes: ByteArray): Pair<List<ReflectCallSite>, List<MethodIdCallSite>> {
     val reflectHits = ArrayList<ReflectCallSite>()
@@ -98,6 +129,13 @@ object ReflectUsageScanner {
     return reflectHits to methodIdHits
   }
 
+  /**
+   * Scans one method body for `Reflect` `invokestatic` instructions.
+   *
+   * @param owner Internal name of the class containing the method.
+   * @param method ASM method node (instructions + frames implied by analysis).
+   * @return Reflect-call sites and method-id sites found in this method.
+   */
   private fun scanMethod(owner: String, method: MethodNode): Pair<List<ReflectCallSite>, List<MethodIdCallSite>> {
     val reflectHits = ArrayList<ReflectCallSite>()
     val methodIdHits = ArrayList<MethodIdCallSite>()
@@ -124,7 +162,6 @@ object ReflectUsageScanner {
       if (insn.name !in ReflectApiNames.SCANNED_STATIC_NAMES) {
         continue
       }
-      // Reflect.method(Class, …) — build-time method identity; separate extraction path.
       if (insn.name == ReflectApiNames.METHOD) {
         when (insn.desc) {
           ReflectApiNames.METHOD_DESCRIPTOR_3_ARGS -> methodIdHits.add(extractMethodIdThreeArgs(insns, i))
@@ -173,6 +210,14 @@ object ReflectUsageScanner {
     return reflectHits to methodIdHits
   }
 
+  /**
+   * Reads the string literal used as the member name for two-argument field/property helpers, or for the value slot of setters (after stripping the assigned expression).
+   *
+   * @param reflectCall The `Reflect` invocation instruction.
+   * @param invokeIndex Index of that instruction in [insns].
+   * @param insns Instruction array for the enclosing method.
+   * @return The string constant when recognized, or null.
+   */
   private fun extractNameLiteral(reflectCall: MethodInsnNode, invokeIndex: Int, insns: Array<AbstractInsnNode>): String? {
     val argCount = Type.getArgumentTypes(reflectCall.desc).size
     return when (reflectCall.name) {
@@ -180,14 +225,8 @@ object ReflectUsageScanner {
         if (argCount != 2) {
           return null
         }
-        var p = invokeIndex - 1
-        p = skipNonInstructionsBackward(insns, p)
-        val insn = insns.getOrNull(p) ?: return null
-        if (insn is LdcInsnNode && insn.cst is String) {
-          insn.cst as String
-        } else {
-          null
-        }
+        val p = insnIndexAboveInvoke(insns, invokeIndex)
+        ldcStringAt(insns, p)
       }
       ReflectApiNames.SET_FIELD, ReflectApiNames.SET_PROPERTY -> {
         if (argCount != 3) {
@@ -200,58 +239,91 @@ object ReflectUsageScanner {
           return null
         }
         p = skipNonInstructionsBackward(insns, p)
-        val insn = insns.getOrNull(p) ?: return null
-        if (insn is LdcInsnNode && insn.cst is String) {
-          insn.cst as String
-        } else {
-          null
-        }
+        ldcStringAt(insns, p)
       }
       else -> null
     }
   }
 
+  /**
+   * Parses `(Class, String, String)` operands for `Reflect.method` (descriptor is the top stack slot before the name).
+   *
+   * @param insns Instruction array.
+   * @param invokeIndex Index of the `invokestatic`.
+   * @return A filled [MethodIdCallSite], or an all-null site when operands are not recognized.
+   */
   private fun extractMethodIdThreeArgs(insns: Array<AbstractInsnNode>, invokeIndex: Int): MethodIdCallSite {
-    var p = invokeIndex - 1
-    p = skipNonInstructionsBackward(insns, p)
-    val dIns = insns.getOrNull(p)
-    if (dIns !is LdcInsnNode || dIns.cst !is String) {
-      return MethodIdCallSite(null, null, null)
-    }
-    val desc = dIns.cst as String
-    p--
-    p = skipNonInstructionsBackward(insns, p)
-    val nIns = insns.getOrNull(p)
-    if (nIns !is LdcInsnNode || nIns.cst !is String) {
-      return MethodIdCallSite(null, null, null)
-    }
-    val name = nIns.cst as String
-    p--
-    p = skipNonInstructionsBackward(insns, p)
-    val cIns = insns.getOrNull(p) ?: return MethodIdCallSite(null, null, null)
-    val owner = extractClassLiteralInternal(cIns)
-    if (owner == null) {
-      return MethodIdCallSite(null, null, null)
-    }
+    var p = insnIndexAboveInvoke(insns, invokeIndex)
+    val desc = ldcStringAt(insns, p) ?: return invalidMethodIdSite()
+    p = moveToPreviousOperandStart(insns, p)
+    val name = ldcStringAt(insns, p) ?: return invalidMethodIdSite()
+    p = moveToPreviousOperandStart(insns, p)
+    val classInsn = insns.getOrNull(p) ?: return invalidMethodIdSite()
+    val owner = extractClassLiteralInternal(classInsn) ?: return invalidMethodIdSite()
     return MethodIdCallSite(owner, name, desc)
   }
 
-  /** Two-arg `Reflect.method(Class, String)` — descriptor filled in later by codegen when unique. */
+  /**
+   * Parses `(Class, String)` operands; the descriptor is resolved later at codegen when the name is unique.
+   *
+   * @param insns Instruction array.
+   * @param invokeIndex Index of the `invokestatic`.
+   * @return A site with [MethodIdCallSite.descriptorOrNull] set to null on success, or an all-null site on parse failure.
+   */
   private fun extractMethodIdTwoArgs(insns: Array<AbstractInsnNode>, invokeIndex: Int): MethodIdCallSite {
-    var p = invokeIndex - 1
-    p = skipNonInstructionsBackward(insns, p)
-    val nIns = insns.getOrNull(p)
-    if (nIns !is LdcInsnNode || nIns.cst !is String) {
-      return MethodIdCallSite(null, null, null)
-    }
-    val name = nIns.cst as String
-    p--
-    p = skipNonInstructionsBackward(insns, p)
-    val cIns = insns.getOrNull(p) ?: return MethodIdCallSite(null, null, null)
-    val owner = extractClassLiteralInternal(cIns) ?: return MethodIdCallSite(null, null, null)
+    var p = insnIndexAboveInvoke(insns, invokeIndex)
+    val name = ldcStringAt(insns, p) ?: return invalidMethodIdSite()
+    p = moveToPreviousOperandStart(insns, p)
+    val classInsn = insns.getOrNull(p) ?: return invalidMethodIdSite()
+    val owner = extractClassLiteralInternal(classInsn) ?: return invalidMethodIdSite()
     return MethodIdCallSite(owner, name, null)
   }
 
+  /** Sentinel when bytecode does not match the expected literal pattern. */
+  private fun invalidMethodIdSite(): MethodIdCallSite = MethodIdCallSite(null, null, null)
+
+  /**
+   * Index of the first instruction above an `INVOKESTATIC`, after skipping line numbers, frames, and labels.
+   *
+   * @param insns Instruction array.
+   * @param invokeIndex Index of the `invokestatic`.
+   * @return Non-negative index, or negative if `invokeIndex` is zero (caller must still guard [getOrNull]).
+   */
+  private fun insnIndexAboveInvoke(insns: Array<AbstractInsnNode>, invokeIndex: Int): Int =
+    skipNonInstructionsBackward(insns, invokeIndex - 1)
+
+  /**
+   * Decrements from the index of a consumed stack-producing instruction to the start index of the previous operand (skipping noise nodes).
+   *
+   * @param insns Instruction array.
+   * @param consumedInsnIndex Index of the instruction that was just read as an operand.
+   * @return Index positioned for the next operand toward the beginning of the method.
+   */
+  private fun moveToPreviousOperandStart(insns: Array<AbstractInsnNode>, consumedInsnIndex: Int): Int =
+    skipNonInstructionsBackward(insns, consumedInsnIndex - 1)
+
+  /**
+   * String constant loaded by [LdcInsnNode] at [index], if present.
+   *
+   * @param insns Instruction array.
+   * @param index Instruction index to read.
+   * @return The [String] constant, or null if the slot is absent or not a string LDC.
+   */
+  private fun ldcStringAt(insns: Array<AbstractInsnNode>, index: Int): String? {
+    val insn = insns.getOrNull(index) ?: return null
+    return if (insn is LdcInsnNode && insn.cst is String) {
+      insn.cst as String
+    } else {
+      null
+    }
+  }
+
+  /**
+   * Resolves a [Type] LDC representing a reference or array class literal to an internal name.
+   *
+   * @param insn The instruction covering the class literal (typically `LDC` of [Type]).
+   * @return Internal name such as `com/example/Foo`, or null if not a class literal.
+   */
   private fun extractClassLiteralInternal(insn: AbstractInsnNode): String? {
     if (insn is LdcInsnNode) {
       val cst = insn.cst
@@ -263,9 +335,14 @@ object ReflectUsageScanner {
   }
 
   /**
-   * When ASM's dataflow merges the receiver to [java/lang/Object], recover a concrete reference
-   * type from the immediately preceding bytecode for common `Reflect.*(recv, "name", ...)` shapes
-   * emitted by javac (field read + string literal + boxed primitive literal).
+   * Recovers a concrete receiver type when the verifier merged the receiver slot to `java/lang/Object`.
+   *
+   * Handles common javac shapes (field load before string literal and optional boxed int).
+   *
+   * @param insns Instruction array.
+   * @param invokeIndex Index of the `Reflect` call.
+   * @param reflectCall That call’s instruction node (used for arity).
+   * @return A reference internal name when a GETFIELD/GETSTATIC provides it, or null.
    */
   private fun refineReceiverFromPrecedingBytecode(insns: Array<AbstractInsnNode>, invokeIndex: Int, reflectCall: MethodInsnNode): String? {
     if (reflectCall.name == ReflectApiNames.CALL_METHOD) {
@@ -293,9 +370,7 @@ object ReflectUsageScanner {
           p--
         }
       }
-      1 -> {
-        // single receiver arg only
-      }
+      1 -> {}
       else -> return null
     }
     p = skipNonInstructionsBackward(insns, p)
@@ -311,6 +386,13 @@ object ReflectUsageScanner {
     return null
   }
 
+  /**
+   * Walks backward over line-number, stack-map frame, and label nodes only.
+   *
+   * @param insns Instruction array.
+   * @param p Starting index (inclusive).
+   * @return The nearest index at or before [p] that references a non-metadata instruction, or negative if exhausted.
+   */
   private fun skipNonInstructionsBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
     var q = p
     while (q >= 0) {
@@ -324,6 +406,13 @@ object ReflectUsageScanner {
     return q
   }
 
+  /**
+   * Steps backward across one JVM stack operand (constant, load, simple field read tail, etc.).
+   *
+   * @param insns Instruction array.
+   * @param p Index of the instruction that produced the top-of-stack value used by the following instruction.
+   * @return Index after removing that contribution, or -1 if the pattern is not recognized.
+   */
   private fun stripOneExpressionBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
     if (p < 0) {
       return -1
@@ -388,6 +477,13 @@ object ReflectUsageScanner {
     return -1
   }
 
+  /**
+   * Removes a trailing `Integer.valueOf` / primitive int literal pair when walking backward from setter call sites.
+   *
+   * @param insns Instruction array.
+   * @param p Current index (often pointing at `valueOf` or an int literal).
+   * @return Adjusted index after stripping that suffix, or [p] when no boxed-int tail is found.
+   */
   private fun stripTrailingBoxedIntLiteralBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
     if (p < 0) {
       return p
