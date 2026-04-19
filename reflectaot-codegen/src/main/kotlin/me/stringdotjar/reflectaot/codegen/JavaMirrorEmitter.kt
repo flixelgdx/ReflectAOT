@@ -44,6 +44,7 @@ object JavaMirrorEmitter {
     sb.append(renderProperty(fq, t))
     sb.append(renderSetProperty(fq, t))
     sb.append(renderFields(fq, t))
+    sb.append(renderCopy(fq, t, roots))
     sb.append(renderCallMethod(fq, t, methodBindings, roots))
 
     sb.append("}\n")
@@ -57,7 +58,7 @@ object JavaMirrorEmitter {
     sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
     for ((name, desc) in t.fields) {
       sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
-      sb.append("      return ").append(boxRead("o." + name, desc)).append(";\n")
+      sb.append("      return ").append(boxReadDispatch("o." + name, desc)).append(";\n")
       sb.append("    }\n")
     }
     sb.append("    throw new IllegalArgumentException(\"Unknown field\");\n")
@@ -69,7 +70,7 @@ object JavaMirrorEmitter {
     val sb = StringBuilder()
     sb.append("  public static void ").append(ReflectApiNames.SET_FIELD).append("(").append(fq).append(" o, String name, Object value) {\n")
     sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
-    for ((name, desc) in t.fields) {
+    for ((name, desc) in t.fieldsWritable) {
       sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
       sb
         .append("      o.")
@@ -87,7 +88,7 @@ object JavaMirrorEmitter {
 
   private fun renderHasField(fq: String, t: TypeIntrospection.IntrospectedType): String {
     val names = LinkedHashSet<String>()
-    t.fields.keys.forEach { names.add(it) }
+    t.instanceFieldsMeta.keys.forEach { names.add(it) }
     t.properties.forEach { names.add(it.name) }
     val sb = StringBuilder()
     sb.append("  public static boolean ").append(ReflectApiNames.HAS_FIELD).append("(").append(fq).append(" o, String name) {\n")
@@ -105,23 +106,22 @@ object JavaMirrorEmitter {
     sb.append("  public static Object ").append(ReflectApiNames.PROPERTY).append("(").append(fq).append(" o, String name) {\n")
     sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
     for (p in t.properties) {
+      if (!ReflectPropertyAnalysis.beanReadable(p, t)) {
+        continue
+      }
       sb.append("    if (\"").append(escape(p.name)).append("\".equals(name)) {\n")
       if (p.getterName != null && p.getterDesc != null) {
         val ret = Type.getReturnType(p.getterDesc).descriptor
-        sb.append("      return ").append(boxRead("o." + p.getterName + "()", ret)).append(";\n")
+        sb.append("      return ").append(boxReadDispatch("o." + p.getterName + "()", ret)).append(";\n")
       } else if (p.fieldName != null && t.fields.containsKey(p.fieldName)) {
         val fd = t.fields[p.fieldName]!!
-        sb.append("      return ").append(boxRead("o." + p.fieldName, fd)).append(";\n")
-      } else {
-        sb.append(
-          "      throw new IllegalArgumentException(\"No readable property " + escape(p.name) + "\");\n",
-        )
+        sb.append("      return ").append(boxReadDispatch("o." + p.fieldName, fd)).append(";\n")
       }
       sb.append("    }\n")
     }
     for ((name, desc) in t.fields) {
       sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
-      sb.append("      return ").append(boxRead("o." + name, desc)).append(";\n")
+      sb.append("      return ").append(boxReadDispatch("o." + name, desc)).append(";\n")
       sb.append("    }\n")
     }
     sb.append("    throw new IllegalArgumentException(\"Unknown property\");\n")
@@ -134,6 +134,9 @@ object JavaMirrorEmitter {
     sb.append("  public static void ").append(ReflectApiNames.SET_PROPERTY).append("(").append(fq).append(" o, String name, Object value) {\n")
     sb.append("    if (name == null) throw new NullPointerException(\"name\");\n")
     for (p in t.properties) {
+      if (!ReflectPropertyAnalysis.beanWritableForEmit(p, t)) {
+        continue
+      }
       sb.append("    if (\"").append(escape(p.name)).append("\".equals(name)) {\n")
       if (p.setterName != null && p.setterDesc != null) {
         val args = Type.getArgumentTypes(p.setterDesc)
@@ -147,23 +150,10 @@ object JavaMirrorEmitter {
             .append(unboxAssign("value", ad))
             .append(");\n")
           sb.append("      return;\n")
-        } else if (p.fieldName != null && t.fields.containsKey(p.fieldName)) {
-          val fd = t.fields[p.fieldName]!!
-          sb
-            .append(
-              "      o.",
-            ).append(p.fieldName)
-            .append(" = ")
-            .append(unboxAssign("value", fd))
-            .append(";\n")
-          sb.append("      return;\n")
-        } else {
-          sb.append(
-            "      throw new IllegalArgumentException(\"No writable property " + escape(p.name) + "\");\n",
-          )
         }
-      } else if (p.fieldName != null && t.fields.containsKey(p.fieldName)) {
-        val fd = t.fields[p.fieldName]!!
+      }
+      if (p.fieldName != null && t.fieldsWritable.containsKey(p.fieldName)) {
+        val fd = t.fieldsWritable[p.fieldName]!!
         sb
           .append("      o.")
           .append(p.fieldName)
@@ -171,14 +161,10 @@ object JavaMirrorEmitter {
           .append(unboxAssign("value", fd))
           .append(";\n")
         sb.append("      return;\n")
-      } else {
-        sb.append(
-          "      throw new IllegalArgumentException(\"No writable property " + escape(p.name) + "\");\n",
-        )
       }
       sb.append("    }\n")
     }
-    for ((name, desc) in t.fields) {
+    for ((name, desc) in t.fieldsWritable) {
       sb.append("    if (\"").append(escape(name)).append("\".equals(name)) {\n")
       sb
         .append("      o.")
@@ -196,7 +182,7 @@ object JavaMirrorEmitter {
 
   private fun renderFields(fq: String, t: TypeIntrospection.IntrospectedType): String {
     val names = LinkedHashSet<String>()
-    t.fields.keys.forEach { names.add(it) }
+    t.instanceFieldsMeta.keys.forEach { names.add(it) }
     t.properties.forEach { names.add(it.name) }
     val sb = StringBuilder()
     sb.append("  public static String[] ").append(ReflectApiNames.FIELDS).append("(").append(fq).append(" o) {\n")
@@ -215,6 +201,26 @@ object JavaMirrorEmitter {
       sb.append("    };\n")
     }
     sb.append("  }\n")
+    return sb.toString()
+  }
+
+  /** Public no-arg ctor + shallow assignment of each [TypeIntrospection.instanceFieldsForCopy] field (matches bytecode emitter). */
+  private fun renderCopy(fq: String, t: TypeIntrospection.IntrospectedType, roots: Collection<File>): String {
+    val refs = TypeIntrospection.instanceFieldsForCopy(t.internalName, roots) ?: emptyList()
+    val hasCtor = TypeIntrospection.hasPublicNoArgConstructor(t.internalName, roots)
+    val sb = StringBuilder()
+    sb.append("  public static Object ").append(ReflectApiNames.COPY).append("(").append(fq).append(" src) {\n")
+    if (!hasCtor) {
+      sb.append("    throw new UnsupportedOperationException(\"No public no-arg constructor for ").append(fq).append("\");\n")
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    sb.append("    ").append(fq).append(" dest = new ").append(fq).append("();\n")
+    for (ref in refs) {
+      sb.append("    dest.").append(ref.name).append(" = src.").append(ref.name).append(";\n")
+    }
+    sb.append("    return dest;\n")
+    sb.append("  }\n\n")
     return sb.toString()
   }
 
@@ -246,7 +252,7 @@ object JavaMirrorEmitter {
         sb.append("        o.").append(b.name).append("(").append(argsCsv).append(");\n")
         sb.append("        return null;\n")
       } else {
-        sb.append("        return ").append(boxRead("o." + b.name + "(" + argsCsv + ")", ret.descriptor)).append(";\n")
+        sb.append("        return ").append(boxReadDispatch("o." + b.name + "(" + argsCsv + ")", ret.descriptor)).append(";\n")
       }
       sb.append("      }\n")
     }
@@ -267,7 +273,7 @@ object JavaMirrorEmitter {
       Type.FLOAT -> "float"
       Type.LONG -> "long"
       Type.DOUBLE -> "double"
-      Type.OBJECT, Type.ARRAY -> fqDesc(t.descriptor)
+      Type.OBJECT, Type.ARRAY -> javaTypeFromDescriptor(t.descriptor)
       else -> "java.lang.Object"
     }
 
@@ -281,9 +287,30 @@ object JavaMirrorEmitter {
       Type.FLOAT -> "((Number) " + expr + ").floatValue()"
       Type.LONG -> "((Number) " + expr + ").longValue()"
       Type.DOUBLE -> "((Number) " + expr + ").doubleValue()"
-      Type.OBJECT, Type.ARRAY -> "(" + fqDesc(t.descriptor) + ") " + expr
-      else -> "(" + fqDesc(t.descriptor) + ") " + expr
+      Type.OBJECT, Type.ARRAY -> "(" + javaTypeFromDescriptor(t.descriptor) + ") " + expr
+      else -> "(" + javaTypeFromDescriptor(t.descriptor) + ") " + expr
     }
+
+  /** Registry `copy` — dispatches to typed accessor `copy`, then default stub. */
+  private fun renderRegistryCopy(sorted: List<TypeIntrospection.IntrospectedType>): String {
+    val sb = StringBuilder()
+    sb.append("  public Object ").append(ReflectApiNames.COPY).append("(Object o) {\n")
+    if (sorted.isEmpty()) {
+      sb.append("    return ReflectAOTDefaultDispatch.").append(ReflectApiNames.COPY).append("(o);\n")
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    for (t in sorted) {
+      val fq = fqcn(t.internalName)
+      val acc = accessClassFqcn(t.internalName)
+      sb.append("    if (o instanceof ").append(fq).append(") {\n")
+      sb.append("      return ").append(acc).append(".").append(ReflectApiNames.COPY).append("((").append(fq).append(") o);\n")
+      sb.append("    }\n")
+    }
+    sb.append("    return ReflectAOTDefaultDispatch.").append(ReflectApiNames.COPY).append("(o);\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
 
   /** Registry `callMethod` — chains `instanceof` to typed accessor static methods. */
   private fun renderRegistryCallMethod(sorted: List<TypeIntrospection.IntrospectedType>): String {
@@ -329,7 +356,7 @@ object JavaMirrorEmitter {
     sb.append("  public boolean isObject(Object v) { return ReflectAOTDefaultDispatch.isObject(v); }\n")
     sb.append("  public boolean isEnumValue(Object v) { return ReflectAOTDefaultDispatch.isEnumValue(v); }\n")
     sb.append(renderRegistryCallMethod(sorted))
-    sb.append("  public Object copy(Object o) { return ReflectAOTDefaultDispatch.copy(o); }\n\n")
+    sb.append(renderRegistryCopy(sorted))
 
     sb.append(renderRegistryDispatch(ReflectApiNames.HAS_FIELD, "boolean", sorted, ReflectApiNames.HAS_FIELD))
     sb.append(renderRegistryDispatch(ReflectApiNames.FIELD, "Object", sorted, ReflectApiNames.FIELD))
@@ -480,13 +507,46 @@ object JavaMirrorEmitter {
       "B" -> "((Number) " + value + ").byteValue()"
       "S" -> "((Number) " + value + ").shortValue()"
       "C" -> "(char) ((Character) " + value + ").charValue()"
-      else -> "(" + fqDesc(desc) + ") " + value
+      else -> "(" + javaTypeFromDescriptor(desc) + ") " + value
     }
 
-  private fun fqDesc(fieldDesc: String): String {
-    if (fieldDesc.startsWith("L") && fieldDesc.endsWith(";")) {
-      return fieldDesc.substring(1, fieldDesc.length - 1).replace('/', '.')
+  /** JVM field/method descriptor → Java source type name (including arrays). */
+  private fun javaTypeFromDescriptor(descriptor: String): String {
+    var i = 0
+    while (i < descriptor.length && descriptor[i] == '[') {
+      i++
     }
-    return "java.lang.Object"
+    val dims = i
+    if (i >= descriptor.length) {
+      return "java.lang.Object"
+    }
+    val rest = descriptor.substring(i)
+    val base =
+      when (rest) {
+        "Z" -> "boolean"
+        "B" -> "byte"
+        "C" -> "char"
+        "S" -> "short"
+        "I" -> "int"
+        "J" -> "long"
+        "F" -> "float"
+        "D" -> "double"
+        "V" -> "void"
+        else ->
+          if (rest.startsWith("L") && rest.endsWith(";")) {
+            rest.substring(1, rest.length - 1).replace('/', '.')
+          } else {
+            "java.lang.Object"
+          }
+      }
+    return base + "[]".repeat(dims)
   }
+
+  /** Wrap primitives for `Object` APIs; reference and array expressions pass through without extra wrappers. */
+  private fun boxReadDispatch(expr: String, desc: String): String =
+    when {
+      desc.isEmpty() -> expr
+      desc[0] == 'L' || desc[0] == '[' -> expr
+      else -> boxRead(expr, desc)
+    }
 }

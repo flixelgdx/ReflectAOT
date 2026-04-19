@@ -31,9 +31,12 @@ import java.util.List;
  *   </li>
  * </ul>
  * <p>
- * This class is intentionally final and stateless; all entry points are static. It is safe to use
- * across multiple threads and supports a pure-Java fallback suitable for use during build scans
- * as well as generated, high-efficiency native code at runtime.
+ * This class is intentionally final with static entry points only. Varargs forms of
+ * {@link #callMethod(Object, int, Object...)} reuse a {@link ThreadLocal} argument list buffer per
+ * thread (see implementation) so hot loops do not allocate a fresh {@link ArrayList} on each call.
+ * Primitive arguments are still boxed into {@code Object} varargs arrays as usual for Java.
+ * It is safe to use across threads and supports a pure-Java fallback suitable for build scans and
+ * generated runtime code.
  * <p>
  * <strong>NOTE:</strong> The presence of this class does not guarantee the existence or correctness
  * of generated metadata; ensure code generation phases run as required (e.g., via the Gradle plugin).
@@ -84,6 +87,40 @@ import java.util.List;
  * }</pre>
  */
 public final class Reflect {
+
+  /**
+   * Reuses one {@link ArrayList} per thread for {@link #callMethod(Object, int, Object...)} /
+   * {@link #callMethod(Object, ReflectMethodId, Object...)}. Nested calls allocate a spare list so
+   * downstream code cannot observe a reused list across re-entrant dispatch.
+   */
+  private static final ThreadLocal<VarargsArgList> VARARGS_BUFFER = ThreadLocal.withInitial(VarargsArgList::new);
+
+  private static final class VarargsArgList {
+    private final ArrayList<Object> list = new ArrayList<>(8);
+    private int depth;
+
+    private Object invoke(Object o, int methodId, Object[] args) {
+      if (args == null || args.length == 0) {
+        return ReflectAOTServices.runtime().callMethod(o, methodId, Collections.emptyList());
+      }
+      depth++;
+      try {
+        if (depth > 1) {
+          ArrayList<Object> nested = new ArrayList<>(args.length);
+          Collections.addAll(nested, args);
+          return ReflectAOTServices.runtime().callMethod(o, methodId, nested);
+        }
+        list.clear();
+        Collections.addAll(list, args);
+        return ReflectAOTServices.runtime().callMethod(o, methodId, list);
+      } finally {
+        depth--;
+        if (depth == 0) {
+          list.clear();
+        }
+      }
+    }
+  }
 
   static {
     try {
@@ -234,12 +271,7 @@ public final class Reflect {
    * @return the invocation result, or {@code null} for void methods when specialized
    */
   public static Object callMethod(Object o, int methodId, Object... args) {
-    if (args == null || args.length == 0) {
-      return callMethod(o, methodId, Collections.emptyList());
-    }
-    List<Object> list = new ArrayList<Object>(args.length);
-    Collections.addAll(list, args);
-    return callMethod(o, methodId, list);
+    return VARARGS_BUFFER.get().invoke(o, methodId, args);
   }
 
   /**

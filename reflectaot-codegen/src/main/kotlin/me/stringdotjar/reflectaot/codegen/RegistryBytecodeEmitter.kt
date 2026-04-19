@@ -30,7 +30,7 @@ object RegistryBytecodeEmitter {
   private val M_SET_PROPERTY = AsmMethod(ReflectApiNames.SET_PROPERTY, Type.VOID_TYPE, arrayOf(OBJECT_TYPE, STRING_TYPE, OBJECT_TYPE))
   private val M_CALL_METHOD = AsmMethod(ReflectApiNames.CALL_METHOD, OBJECT_TYPE, arrayOf(OBJECT_TYPE, INT_TYPE, LIST_TYPE))
   private val M_FIELDS = AsmMethod(ReflectApiNames.FIELDS, STRING_ARRAY_TYPE, arrayOf(OBJECT_TYPE))
-  private val M_COPY = AsmMethod("copy", OBJECT_TYPE, arrayOf(OBJECT_TYPE))
+  private val M_COPY = AsmMethod(ReflectApiNames.COPY, OBJECT_TYPE, arrayOf(OBJECT_TYPE))
   private val M_COMPARE = AsmMethod("compare", Type.INT_TYPE, arrayOf(OBJECT_TYPE, OBJECT_TYPE))
   private val M_COMPARE_METHODS = AsmMethod("compareMethods", Type.BOOLEAN_TYPE, arrayOf(INT_TYPE, INT_TYPE))
   private val M_IS_FUNCTION = AsmMethod("isFunction", Type.BOOLEAN_TYPE, arrayOf(OBJECT_TYPE))
@@ -64,7 +64,8 @@ object RegistryBytecodeEmitter {
     emitDefaultBridge(cw, M_IS_FUNCTION, DEFAULT_TYPE, M_IS_FUNCTION)
     emitDefaultBridge(cw, M_IS_OBJECT, DEFAULT_TYPE, M_IS_OBJECT)
     emitDefaultBridge(cw, M_IS_ENUM, DEFAULT_TYPE, M_IS_ENUM)
-    emitDefaultBridge(cw, M_COPY, DEFAULT_TYPE, M_COPY)
+
+    emitDispatchObjectCopy(cw, sorted)
 
     emitDispatchObjectStringBool(cw, M_HAS_FIELD, sorted) { t ->
       val owner = Type.getObjectType(t.internalName)
@@ -111,6 +112,39 @@ object RegistryBytecodeEmitter {
       ga.loadArg(i)
     }
     ga.invokeStatic(target, targetMethod)
+    ga.returnValue()
+    ga.endMethod()
+  }
+
+  /**
+   * `copy(Object)` → typed `Foo_ReflectAOT.copy(Foo)`, else [ReflectAOTDefaultDispatch.copy].
+   */
+  private fun emitDispatchObjectCopy(cw: ClassWriter, sorted: List<TypeIntrospection.IntrospectedType>) {
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, M_COPY, null, null, cw)
+    ga.visitCode()
+    if (sorted.isEmpty()) {
+      ga.loadArg(0)
+      ga.invokeStatic(DEFAULT_TYPE, M_COPY)
+      ga.returnValue()
+      ga.endMethod()
+      return
+    }
+    ga.loadArg(0)
+    for (t in sorted) {
+      val owner = Type.getObjectType(t.internalName)
+      val access = Type.getObjectType(AccessBytecodeEmitter.accessInternalName(t.internalName))
+      val next = ga.newLabel()
+      ga.dup()
+      ga.instanceOf(owner)
+      ga.ifZCmp(GeneratorAdapter.EQ, next)
+      ga.checkCast(owner)
+      ga.invokeStatic(access, AsmMethod(ReflectApiNames.COPY, OBJECT_TYPE, arrayOf(owner)))
+      ga.returnValue()
+      ga.mark(next)
+    }
+    ga.pop()
+    ga.loadArg(0)
+    ga.invokeStatic(DEFAULT_TYPE, M_COPY)
     ga.returnValue()
     ga.endMethod()
   }

@@ -36,6 +36,9 @@ object ReflectApiNames {
   /** Matches `Reflect.callMethod`. */
   const val CALL_METHOD = "callMethod"
 
+  /** Matches `Reflect.copy`. */
+  const val COPY = "copy"
+
   /** Matches `Reflect.method` for build-time method identity (must stay aligned with `Reflect.java`). */
   const val METHOD = "method"
 

@@ -1,5 +1,6 @@
 package me.stringdotjar.reflectaot.codegen
 
+import org.objectweb.asm.Opcodes
 import java.io.File
 
 /**
@@ -90,22 +91,63 @@ object ReflectAOTCodegen {
       val name = site.nameLiteralOrNull ?: continue
       val t = typesByInternal[recv] ?: continue
       when (site.reflectMethod) {
-        ReflectApiNames.FIELD, ReflectApiNames.SET_FIELD -> {
-          if (!t.fields.containsKey(name)) {
+        ReflectApiNames.FIELD -> {
+          val meta =
+            t.instanceFieldsMeta[name]
+              ?: throw IllegalStateException(
+                "ReflectAOT: unknown field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
+                  "Fix the name or add the correct receiver type to reflectaot.extraClasses.",
+              )
+          if ((meta.access and Opcodes.ACC_PUBLIC) == 0) {
             throw IllegalStateException(
-              "ReflectAOT: unknown field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
-                "Fix the name or add the correct receiver type to reflectaot.extraClasses.",
+              "ReflectAOT: Reflect.${site.reflectMethod} cannot access \"$name\" on ${recv.replace('/', '.')}: " +
+                "field is ${TypeIntrospection.visibilityWord(meta.access)}. " +
+                "Only public instance fields are supported for direct field access; use Reflect.property(...) / Reflect.setProperty(...) with JavaBeans accessors when the member is not public.",
             )
           }
         }
-        ReflectApiNames.PROPERTY, ReflectApiNames.SET_PROPERTY, ReflectApiNames.HAS_FIELD -> {
+        ReflectApiNames.SET_FIELD -> {
+          val meta =
+            t.instanceFieldsMeta[name]
+              ?: throw IllegalStateException(
+                "ReflectAOT: unknown field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
+                  "Fix the name or add the correct receiver type to reflectaot.extraClasses.",
+              )
+          if ((meta.access and Opcodes.ACC_PUBLIC) == 0) {
+            throw IllegalStateException(
+              "ReflectAOT: Reflect.${site.reflectMethod} cannot access \"$name\" on ${recv.replace('/', '.')}: " +
+                "field is ${TypeIntrospection.visibilityWord(meta.access)}. " +
+                "Only public instance fields can be assigned via Reflect.${ReflectApiNames.SET_FIELD}; use Reflect.${ReflectApiNames.SET_PROPERTY} with a setter when the field is not public.",
+            )
+          }
+          if ((meta.access and Opcodes.ACC_FINAL) != 0) {
+            throw IllegalStateException(
+              "ReflectAOT: Reflect.${site.reflectMethod} cannot assign \"$name\" on ${recv.replace('/', '.')}: field is final.",
+            )
+          }
+        }
+        ReflectApiNames.PROPERTY -> {
+          if (!ReflectPropertyAnalysis.canReadPropertyName(t, name)) {
+            throw IllegalStateException(
+              "ReflectAOT: no readable property or public field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
+                "Use a JavaBeans getter name, or only public fields for direct reads.",
+            )
+          }
+        }
+        ReflectApiNames.SET_PROPERTY -> {
+          if (!ReflectPropertyAnalysis.canWritePropertyName(t, name)) {
+            throw IllegalStateException(
+              "ReflectAOT: no writable property or non-final public field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
+                "Final fields and fields without a public setter cannot be written via Reflect.${site.reflectMethod}.",
+            )
+          }
+        }
+        ReflectApiNames.HAS_FIELD -> {
           val propNames = t.properties.map { it.name }.toSet()
-          val ok = t.fields.containsKey(name) || name in propNames
+          val ok = name in t.instanceFieldsMeta || name in propNames
           if (!ok) {
             throw IllegalStateException(
-              "ReflectAOT: unknown property or field \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}). " +
-                "For JavaBeans accessors use the property name (e.g. {@code foo} for {@code getFoo()}). " +
-                "To invoke a regular method use Reflect.${ReflectApiNames.METHOD}(SomeType.class, \"methodName\") when the name is unique, or Reflect.${ReflectApiNames.METHOD}(SomeType.class, \"methodName\", \"(I)V\") with a JVM descriptor if overloaded.",
+              "ReflectAOT: unknown field or property name \"$name\" on ${recv.replace('/', '.')} (from Reflect.${site.reflectMethod}).",
             )
           }
         }

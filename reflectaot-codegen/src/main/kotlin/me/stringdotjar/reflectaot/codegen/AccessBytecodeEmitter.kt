@@ -4,6 +4,7 @@ import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.commons.GeneratorAdapter
+import org.objectweb.asm.commons.Method
 import java.io.File
 import org.objectweb.asm.commons.Method as AsmMethod
 
@@ -22,7 +23,7 @@ object AccessBytecodeEmitter {
   fun accessInternalName(typeInternal: String): String =
     "me/stringdotjar/reflectaot/generated/access/" + typeInternal.replace('/', '_') + "ReflectAOT"
 
-  /** Writes one accessor `.class`: field/property helpers, `fields`, and `callMethod` switch for bound ids. */
+  /** Writes one accessor `.class`: field/property helpers, `fields`, `copy`, and `callMethod` switch for bound ids. */
   fun emit(type: TypeIntrospection.IntrospectedType, outputDir: File, roots: Collection<File>, methodBindings: List<MethodIdBinding>) {
     val ownerType = Type.getObjectType(type.internalName)
     val accessInternal = accessInternalName(type.internalName)
@@ -51,6 +52,7 @@ object AccessBytecodeEmitter {
     emitProperty(type, cw, ownerType)
     emitSetProperty(type, cw, ownerType)
     emitFields(type, cw, ownerType)
+    emitCopy(type, cw, ownerType, roots)
     emitCallMethod(type, cw, ownerType, methodBindings, roots)
 
     cw.visitEnd()
@@ -95,7 +97,7 @@ object AccessBytecodeEmitter {
     ga.throwException(Type.getType(NullPointerException::class.java), "name")
     ga.mark(nonNull)
 
-    for ((name, desc) in type.fields) {
+    for ((name, desc) in type.fieldsWritable) {
       val ft = Type.getType(desc)
       stringEqualsThen(
         ga,
@@ -126,7 +128,7 @@ object AccessBytecodeEmitter {
     ga.mark(nonNull)
 
     val allNames = LinkedHashSet<String>()
-    type.fields.keys.forEach { allNames.add(it) }
+    type.instanceFieldsMeta.keys.forEach { allNames.add(it) }
     type.properties.forEach { allNames.add(it.name) }
 
     for (n in allNames) {
@@ -155,6 +157,9 @@ object AccessBytecodeEmitter {
     ga.mark(nonNull)
 
     for (p in type.properties) {
+      if (!ReflectPropertyAnalysis.beanReadable(p, type)) {
+        continue
+      }
       stringEqualsThen(
         ga,
         p.name,
@@ -164,18 +169,13 @@ object AccessBytecodeEmitter {
             val rt = Type.getReturnType(p.getterDesc)
             ga.invokeVirtual(ownerType, AsmMethod(p.getterName!!, p.getterDesc))
             ga.box(rt)
-            ga.returnValue()
-          } else if (p.fieldName != null && type.fields.containsKey(p.fieldName)) {
+          } else {
             ga.loadArg(0)
-            val fd = type.fields[p.fieldName]!!
+            val fd = type.fields[p.fieldName!!]!!
             ga.getField(ownerType, p.fieldName!!, Type.getType(fd))
             ga.box(Type.getType(fd))
-            ga.returnValue()
           }
-          ga.throwException(
-            Type.getType(IllegalArgumentException::class.java),
-            "No readable property " + p.name,
-          )
+          ga.returnValue()
         },
       )
     }
@@ -206,6 +206,9 @@ object AccessBytecodeEmitter {
     ga.mark(nonNull)
 
     for (p in type.properties) {
+      if (!ReflectPropertyAnalysis.beanWritableForEmit(p, type)) {
+        continue
+      }
       stringEqualsThen(
         ga,
         p.name,
@@ -220,22 +223,18 @@ object AccessBytecodeEmitter {
               ga.returnValue()
             }
           }
-          if (p.fieldName != null && type.fields.containsKey(p.fieldName)) {
+          if (p.fieldName != null && type.fieldsWritable.containsKey(p.fieldName)) {
             ga.loadArg(0)
             ga.loadArg(2)
-            val ft = Type.getType(type.fields[p.fieldName]!!)
+            val ft = Type.getType(type.fieldsWritable[p.fieldName]!!)
             ga.unbox(ft)
             ga.putField(ownerType, p.fieldName!!, ft)
             ga.returnValue()
           }
-          ga.throwException(
-            Type.getType(IllegalArgumentException::class.java),
-            "No writable property " + p.name,
-          )
         },
       )
     }
-    for ((name, desc) in type.fields) {
+    for ((name, desc) in type.fieldsWritable) {
       stringEqualsThen(
         ga,
         name,
@@ -301,12 +300,47 @@ object AccessBytecodeEmitter {
     ga.endMethod()
   }
 
+  /**
+   * Shallow copy: `new` + public no-arg `<init>`, then `getfield`/`putfield` for each
+   * [TypeIntrospection.instanceFieldsForCopy] entry (public, non-final).
+   */
+  private fun emitCopy(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type, roots: Collection<File>) {
+    val refs = TypeIntrospection.instanceFieldsForCopy(type.internalName, roots) ?: emptyList()
+    val m = AsmMethod(ReflectApiNames.COPY, OBJECT_TYPE, arrayOf(ownerType))
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
+    ga.visitCode()
+    if (!TypeIntrospection.hasPublicNoArgConstructor(type.internalName, roots)) {
+      ga.throwException(
+        Type.getType(UnsupportedOperationException::class.java),
+        "No public no-arg constructor for " + type.internalName.replace('/', '.'),
+      )
+      ga.endMethod()
+      return
+    }
+    ga.newInstance(ownerType)
+    ga.dup()
+    ga.invokeConstructor(ownerType, Method.getMethod("void <init> ()"))
+    val destSlot = ga.newLocal(ownerType)
+    ga.storeLocal(destSlot)
+    for (ref in refs) {
+      val decl = Type.getObjectType(ref.declaringInternal)
+      val ft = Type.getType(ref.descriptor)
+      ga.loadLocal(destSlot)
+      ga.loadArg(0)
+      ga.getField(decl, ref.name, ft)
+      ga.putField(decl, ref.name, ft)
+    }
+    ga.loadLocal(destSlot)
+    ga.returnValue()
+    ga.endMethod()
+  }
+
   private fun emitFields(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
     val m = AsmMethod(ReflectApiNames.FIELDS, STRING_ARRAY_TYPE, arrayOf(ownerType))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     val names = LinkedHashSet<String>()
-    type.fields.keys.forEach { names.add(it) }
+    type.instanceFieldsMeta.keys.forEach { names.add(it) }
     type.properties.forEach { names.add(it.name) }
 
     val nameList = names.toList()
