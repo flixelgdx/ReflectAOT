@@ -14,6 +14,8 @@ public interface ReflectAOTRuntime {
    * @param name member name
    * @return {@code true} when the receiver exposes the member under the same membership rules as
    *     {@link Reflect#fields(Object)}
+   * @throws UnsupportedOperationException when the receiver type was not specialized at build time (generated registry),
+   *     including when no matching {@code instanceof} applies
    */
   boolean hasField(Object o, String name);
 

@@ -358,7 +358,7 @@ object JavaMirrorEmitter {
     sb.append(renderRegistryCallMethod(sorted))
     sb.append(renderRegistryCopy(sorted))
 
-    sb.append(renderRegistryDispatch(ReflectApiNames.HAS_FIELD, "boolean", sorted, ReflectApiNames.HAS_FIELD))
+    sb.append(renderRegistryDispatch(ReflectApiNames.HAS_FIELD, "boolean", sorted, ReflectApiNames.HAS_FIELD, booleanReceiverMismatchThrows = true))
     sb.append(renderRegistryDispatch(ReflectApiNames.FIELD, "Object", sorted, ReflectApiNames.FIELD))
     sb.append(renderRegistryDispatchVoid(ReflectApiNames.SET_FIELD, sorted, ReflectApiNames.SET_FIELD))
     sb.append(renderRegistryDispatch(ReflectApiNames.PROPERTY, "Object", sorted, ReflectApiNames.PROPERTY))
@@ -369,7 +369,13 @@ object JavaMirrorEmitter {
     File(dir, "ReflectAOTRegistry.java").writeText(sb.toString())
   }
 
-  private fun renderRegistryDispatch(name: String, ret: String, sorted: List<TypeIntrospection.IntrospectedType>, accessMethod: String): String {
+  private fun renderRegistryDispatch(
+    name: String,
+    ret: String,
+    sorted: List<TypeIntrospection.IntrospectedType>,
+    accessMethod: String,
+    booleanReceiverMismatchThrows: Boolean = false,
+  ): String {
     val sb = StringBuilder()
     sb
       .append("  public ")
@@ -379,7 +385,15 @@ object JavaMirrorEmitter {
       .append("(Object o, String name) {\n")
     if (sorted.isEmpty()) {
       if (ret == "boolean") {
-        sb.append("    return false;\n")
+        if (booleanReceiverMismatchThrows) {
+          sb
+            .append(
+              "    throw new UnsupportedOperationException(\"Reflect.",
+            ).append(name)
+            .append(" not specialized\");\n")
+        } else {
+          sb.append("    return false;\n")
+        }
       } else {
         sb
           .append(
@@ -406,7 +420,15 @@ object JavaMirrorEmitter {
       sb.append("    }\n")
     }
     if (ret == "boolean") {
-      sb.append("    return false;\n")
+      if (booleanReceiverMismatchThrows) {
+        sb
+          .append(
+            "    throw new UnsupportedOperationException(\"Reflect.",
+          ).append(name)
+          .append(" not specialized for receiver\");\n")
+      } else {
+        sb.append("    return false;\n")
+      }
     } else {
       sb
         .append(

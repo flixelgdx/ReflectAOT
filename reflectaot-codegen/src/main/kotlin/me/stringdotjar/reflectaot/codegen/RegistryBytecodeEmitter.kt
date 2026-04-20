@@ -153,8 +153,10 @@ object RegistryBytecodeEmitter {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, ifaceMethod, null, null, cw)
     ga.visitCode()
     if (sorted.isEmpty()) {
-      ga.push(false)
-      ga.returnValue()
+      ga.throwException(
+        Type.getType(UnsupportedOperationException::class.java),
+        "Reflect.${ReflectApiNames.HAS_FIELD} not specialized (no concrete receiver types discovered)",
+      )
       ga.endMethod()
       return
     }
@@ -173,8 +175,10 @@ object RegistryBytecodeEmitter {
       ga.mark(next)
     }
     ga.pop()
-    ga.push(false)
-    ga.returnValue()
+    ga.throwException(
+      Type.getType(UnsupportedOperationException::class.java),
+      "Reflect.${ReflectApiNames.HAS_FIELD} not specialized for receiver",
+    )
     ga.endMethod()
   }
 
@@ -217,7 +221,7 @@ object RegistryBytecodeEmitter {
     if (sorted.isEmpty()) {
       ga.throwException(
         Type.getType(UnsupportedOperationException::class.java),
-        "Reflect.${ReflectApiNames.SET_FIELD} not specialized (no concrete receiver types discovered)",
+        "Reflect.${ifaceMethod.name} not specialized (no concrete receiver types discovered)",
       )
       ga.endMethod()
       return
@@ -240,7 +244,7 @@ object RegistryBytecodeEmitter {
     ga.pop()
     ga.throwException(
       Type.getType(UnsupportedOperationException::class.java),
-      "Reflect.${ReflectApiNames.SET_FIELD} not specialized for receiver",
+      "Reflect.${ifaceMethod.name} not specialized for receiver",
     )
     ga.endMethod()
   }

@@ -51,6 +51,15 @@ object ReflectApiNames {
     setOf(FIELD, SET_FIELD, PROPERTY, SET_PROPERTY, HAS_FIELD, FIELDS, METHOD)
 
   /**
+   * APIs whose member name must be a string **constant** in bytecode so codegen can validate it.
+   *
+   * Used by [me.stringdotjar.reflectaot.codegen.ReflectAOTCodegen]; excludes [FIELDS] (no name) and
+   * [METHOD] (handled via [MethodIdCallSite]).
+   */
+  val NEEDS_COMPILE_TIME_MEMBER_NAME_LITERAL: Set<String> =
+    setOf(FIELD, SET_FIELD, PROPERTY, SET_PROPERTY, HAS_FIELD)
+
+  /**
    * All `Reflect` static targets the scanner walks (includes [CALL_METHOD], which does not appear in [NEEDS_CONCRETE_RECEIVER]).
    */
   val SCANNED_STATIC_NAMES: Set<String> = NEEDS_CONCRETE_RECEIVER + setOf(CALL_METHOD)

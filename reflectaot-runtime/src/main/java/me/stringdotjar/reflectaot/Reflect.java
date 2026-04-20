@@ -365,6 +365,8 @@ public final class Reflect {
    * @param o receiver object
    * @param field field name to search for
    * @return {@code true} if the field exists on the target type, otherwise {@code false}
+   * @throws UnsupportedOperationException when ReflectAOT has no dispatch for the receiver's concrete type (same as
+   *     other Reflect entry points), or when using the stub runtime
    */
   public static boolean hasField(Object o, String field) {
     return ReflectAOTServices.runtime().hasField(o, field);
@@ -426,8 +428,10 @@ public final class Reflect {
    * @param o receiver object
    * @param field property name to resolve
    * @param value new property value
-   * @throws UnsupportedOperationException when the receiver type was not specialized at build time
-   * @throws IllegalArgumentException when the name is unknown for the receiver
+   * @throws UnsupportedOperationException when the receiver type was not specialized at build time (or the stub
+   *     runtime is installed)
+   * @throws IllegalArgumentException when the name is unknown or not writable for the receiver (dynamic callers only;
+   *     the Gradle plugin rejects invalid constant names at build time)
    */
   public static void setProperty(Object o, String field, Object value) {
     ReflectAOTServices.runtime().setProperty(o, field, value);

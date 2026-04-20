@@ -188,7 +188,7 @@ object ReflectUsageScanner {
       val internal = recvType.internalName
       val receiver =
         if (internal == "java/lang/Object") {
-          refineReceiverFromPrecedingBytecode(insns, i, insn) ?: "java/lang/Object"
+          refineReceiverFromPrecedingBytecode(insns, i, insn, method) ?: "java/lang/Object"
         } else {
           internal
         }
@@ -337,14 +337,22 @@ object ReflectUsageScanner {
   /**
    * Recovers a concrete receiver type when the verifier merged the receiver slot to `java/lang/Object`.
    *
-   * Handles common javac shapes (field load before string literal and optional boxed int).
+   * Mirrors [extractNameLiteral] stack stripping for three-argument setters so complex third operands
+   * (constructors, boxed numerics, etc.) do not hide the member-name [LdcInsnNode]. Also resolves
+   * [ALOAD] via [MethodNode.localVariables] and [CHECKCAST] when present.
    *
    * @param insns Instruction array.
    * @param invokeIndex Index of the `Reflect` call.
    * @param reflectCall That call’s instruction node (used for arity).
-   * @return A reference internal name when a GETFIELD/GETSTATIC provides it, or null.
+   * @param containingMethod Enclosing method (local variable table for [ALOAD] receivers).
+   * @return A reference internal name when recognized, or null.
    */
-  private fun refineReceiverFromPrecedingBytecode(insns: Array<AbstractInsnNode>, invokeIndex: Int, reflectCall: MethodInsnNode): String? {
+  private fun refineReceiverFromPrecedingBytecode(
+    insns: Array<AbstractInsnNode>,
+    invokeIndex: Int,
+    reflectCall: MethodInsnNode,
+    containingMethod: MethodNode,
+  ): String? {
     if (reflectCall.name == ReflectApiNames.CALL_METHOD) {
       return null
     }
@@ -356,7 +364,10 @@ object ReflectUsageScanner {
     val argCount = Type.getArgumentTypes(reflectCall.desc).size
     when (argCount) {
       3 -> {
-        p = stripTrailingBoxedIntLiteralBackward(insns, p)
+        p = stripOneExpressionBackward(insns, p)
+        if (p < 0) {
+          return null
+        }
         p = skipNonInstructionsBackward(insns, p)
         val two = insns.getOrNull(p)
         if (two !is LdcInsnNode || two.cst !is String) {
@@ -375,12 +386,57 @@ object ReflectUsageScanner {
     }
     p = skipNonInstructionsBackward(insns, p)
     val recvInsn = insns.getOrNull(p) ?: return null
-    if (recvInsn is FieldInsnNode &&
-      (recvInsn.opcode == Opcodes.GETFIELD || recvInsn.opcode == Opcodes.GETSTATIC)
-    ) {
-      val t = Type.getType(recvInsn.desc)
-      if (t.sort == Type.OBJECT || t.sort == Type.ARRAY) {
-        return t.internalName
+    return receiverInternalFromInsn(recvInsn, p, containingMethod)
+  }
+
+  /**
+   * Maps the instruction that produced the Reflect call’s receiver operand to an internal type name.
+   *
+   * @param insn Instruction index [insnIndexInArray] in [containingMethod]’s instruction array.
+   */
+  private fun receiverInternalFromInsn(
+    insn: AbstractInsnNode,
+    insnIndexInArray: Int,
+    containingMethod: MethodNode,
+  ): String? {
+    when {
+      insn is FieldInsnNode &&
+        (insn.opcode == Opcodes.GETFIELD || insn.opcode == Opcodes.GETSTATIC) -> {
+        val t = Type.getType(insn.desc)
+        if (t.sort == Type.OBJECT || t.sort == Type.ARRAY) {
+          return t.internalName
+        }
+      }
+      insn is VarInsnNode && insn.opcode == Opcodes.ALOAD -> {
+        val desc = localVariableDescriptorAt(containingMethod, insnIndexInArray, insn.`var`)
+        if (desc != null) {
+          val t = Type.getType(desc)
+          if (t.sort == Type.OBJECT || t.sort == Type.ARRAY) {
+            return t.internalName
+          }
+        }
+      }
+      insn is TypeInsnNode && insn.opcode == Opcodes.CHECKCAST -> {
+        return Type.getObjectType(insn.desc).internalName
+      }
+    }
+    return null
+  }
+
+  /** Resolves the JVM field descriptor for a local slot active at [insnIndexInArray]. */
+  private fun localVariableDescriptorAt(method: MethodNode, insnIndexInArray: Int, localSlot: Int): String? {
+    val arr = method.instructions.toArray()
+    for (lv in method.localVariables ?: emptyList()) {
+      if (lv.index != localSlot) {
+        continue
+      }
+      val startIdx = arr.indexOf(lv.start)
+      val endIdx = arr.indexOf(lv.end)
+      if (startIdx < 0 || endIdx < 0) {
+        continue
+      }
+      if (insnIndexInArray >= startIdx && insnIndexInArray < endIdx) {
+        return lv.desc
       }
     }
     return null
@@ -437,6 +493,26 @@ object ReflectUsageScanner {
         if (op == Opcodes.ACONST_NULL) {
           return p - 1
         }
+        if (op == Opcodes.I2F || op == Opcodes.I2D || op == Opcodes.I2L || op == Opcodes.I2B || op == Opcodes.I2C || op == Opcodes.I2S) {
+          var q = p - 1
+          q = skipNonInstructionsBackward(insns, q)
+          return stripOneExpressionBackward(insns, q)
+        }
+        if (op == Opcodes.F2I || op == Opcodes.F2L || op == Opcodes.F2D) {
+          var q = p - 1
+          q = skipNonInstructionsBackward(insns, q)
+          return stripOneExpressionBackward(insns, q)
+        }
+        if (op == Opcodes.L2I || op == Opcodes.L2F || op == Opcodes.L2D) {
+          var q = p - 1
+          q = skipNonInstructionsBackward(insns, q)
+          return stripOneExpressionBackward(insns, q)
+        }
+        if (op == Opcodes.D2I || op == Opcodes.D2F || op == Opcodes.D2L) {
+          var q = p - 1
+          q = skipNonInstructionsBackward(insns, q)
+          return stripOneExpressionBackward(insns, q)
+        }
       }
       is IntInsnNode -> {
         if (insn.opcode == Opcodes.BIPUSH || insn.opcode == Opcodes.SIPUSH) {
@@ -460,12 +536,29 @@ object ReflectUsageScanner {
         }
       }
       is MethodInsnNode -> {
-        if (insn.opcode == Opcodes.INVOKESTATIC &&
-          insn.owner == "java/lang/Integer" &&
-          insn.name == "valueOf" &&
-          insn.desc == "(I)Ljava/lang/Integer;"
-        ) {
-          return stripTrailingBoxedIntLiteralBackward(insns, p - 1)
+        when {
+          insn.opcode == Opcodes.INVOKESTATIC &&
+            insn.owner == "java/lang/Integer" &&
+            insn.name == "valueOf" &&
+            insn.desc == "(I)Ljava/lang/Integer;" ->
+            return stripTrailingBoxedIntLiteralBackward(insns, p)
+          insn.opcode == Opcodes.INVOKESTATIC &&
+            insn.owner == "java/lang/Float" &&
+            insn.name == "valueOf" &&
+            insn.desc == "(F)Ljava/lang/Float;" ->
+            return stripTrailingBoxedFloatLiteralBackward(insns, p)
+          insn.opcode == Opcodes.INVOKESTATIC &&
+            insn.owner == "java/lang/Double" &&
+            insn.name == "valueOf" &&
+            insn.desc == "(D)Ljava/lang/Double;" ->
+            return stripTrailingBoxedDoubleLiteralBackward(insns, p)
+          insn.opcode == Opcodes.INVOKESTATIC &&
+            insn.owner == "java/lang/Long" &&
+            insn.name == "valueOf" &&
+            insn.desc == "(J)Ljava/lang/Long;" ->
+            return stripTrailingBoxedLongLiteralBackward(insns, p)
+          insn.opcode == Opcodes.INVOKESPECIAL && insn.name == "<init>" ->
+            return stripConstructorInvocationBackward(insns, p)
         }
       }
       is TypeInsnNode -> {
@@ -475,6 +568,123 @@ object ReflectUsageScanner {
       }
     }
     return -1
+  }
+
+  /**
+   * Strips `new T(args…)` / `new T()` so [extractNameLiteral] can find the member string under the value expression.
+   *
+   * Expects javac-shaped `NEW`, `DUP`, …, `INVOKESPECIAL <init>`.
+   */
+  private fun stripConstructorInvocationBackward(insns: Array<AbstractInsnNode>, invokeSpecialIndex: Int): Int {
+    val insn = insns.getOrNull(invokeSpecialIndex) as? MethodInsnNode ?: return -1
+    if (insn.opcode != Opcodes.INVOKESPECIAL || insn.name != "<init>") {
+      return -1
+    }
+    val argTypes = Type.getArgumentTypes(insn.desc)
+    var q = invokeSpecialIndex - 1
+    repeat(argTypes.size) {
+      q = skipNonInstructionsBackward(insns, q)
+      q = stripOneExpressionBackward(insns, q)
+      if (q < 0) {
+        return -1
+      }
+    }
+    q = skipNonInstructionsBackward(insns, q)
+    val dupInsn = insns.getOrNull(q)
+    if (dupInsn is InsnNode && dupInsn.opcode == Opcodes.DUP) {
+      var r = q - 1
+      r = skipNonInstructionsBackward(insns, r)
+      val newInsn = insns.getOrNull(r)
+      if (newInsn is TypeInsnNode && newInsn.opcode == Opcodes.NEW) {
+        return r - 1
+      }
+      return -1
+    }
+    if (argTypes.isEmpty()) {
+      val newInsn = insns.getOrNull(q)
+      if (newInsn is TypeInsnNode && newInsn.opcode == Opcodes.NEW) {
+        return q - 1
+      }
+    }
+    return -1
+  }
+
+  private fun stripTrailingBoxedFloatLiteralBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
+    val top = insns.getOrNull(p) ?: return -1
+    if (top !is MethodInsnNode ||
+      top.opcode != Opcodes.INVOKESTATIC ||
+      top.owner != "java/lang/Float" ||
+      top.name != "valueOf" ||
+      top.desc != "(F)Ljava/lang/Float;"
+    ) {
+      return -1
+    }
+    var q = p - 1
+    q = skipNonInstructionsBackward(insns, q)
+    val lit = insns.getOrNull(q) ?: return -1
+    when {
+      lit is LdcInsnNode && lit.cst is Float -> return q - 1
+      lit is InsnNode &&
+        (lit.opcode == Opcodes.FCONST_0 || lit.opcode == Opcodes.FCONST_1 || lit.opcode == Opcodes.FCONST_2) -> return q - 1
+      lit is InsnNode && lit.opcode == Opcodes.I2F -> {
+        var r = q - 1
+        r = skipNonInstructionsBackward(insns, r)
+        return stripOneExpressionBackward(insns, r)
+      }
+      else -> return -1
+    }
+  }
+
+  private fun stripTrailingBoxedDoubleLiteralBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
+    val top = insns.getOrNull(p) ?: return -1
+    if (top !is MethodInsnNode ||
+      top.opcode != Opcodes.INVOKESTATIC ||
+      top.owner != "java/lang/Double" ||
+      top.name != "valueOf" ||
+      top.desc != "(D)Ljava/lang/Double;"
+    ) {
+      return -1
+    }
+    var q = p - 1
+    q = skipNonInstructionsBackward(insns, q)
+    val lit = insns.getOrNull(q) ?: return -1
+    when {
+      lit is LdcInsnNode && lit.cst is Double -> return q - 1
+      lit is InsnNode &&
+        (lit.opcode == Opcodes.DCONST_0 || lit.opcode == Opcodes.DCONST_1) -> return q - 1
+      lit is InsnNode && (lit.opcode == Opcodes.I2D || lit.opcode == Opcodes.F2D) -> {
+        var r = q - 1
+        r = skipNonInstructionsBackward(insns, r)
+        return stripOneExpressionBackward(insns, r)
+      }
+      else -> return -1
+    }
+  }
+
+  private fun stripTrailingBoxedLongLiteralBackward(insns: Array<AbstractInsnNode>, p: Int): Int {
+    val top = insns.getOrNull(p) ?: return -1
+    if (top !is MethodInsnNode ||
+      top.opcode != Opcodes.INVOKESTATIC ||
+      top.owner != "java/lang/Long" ||
+      top.name != "valueOf" ||
+      top.desc != "(J)Ljava/lang/Long;"
+    ) {
+      return -1
+    }
+    var q = p - 1
+    q = skipNonInstructionsBackward(insns, q)
+    val lit = insns.getOrNull(q) ?: return -1
+    when {
+      lit is LdcInsnNode && lit.cst is Long -> return q - 1
+      lit is InsnNode &&
+        (lit.opcode == Opcodes.LCONST_0 || lit.opcode == Opcodes.LCONST_1) -> return q - 1
+      lit is InsnNode && lit.opcode == Opcodes.I2L -> {
+        var r = q - 1
+        r = skipNonInstructionsBackward(insns, r)
+        return stripOneExpressionBackward(insns, r)
+      }
+      else -> return -1
+    }
   }
 
   /**

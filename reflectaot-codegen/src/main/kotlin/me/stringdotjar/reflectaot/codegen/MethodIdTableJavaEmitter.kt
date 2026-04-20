@@ -1,6 +1,7 @@
 package me.stringdotjar.reflectaot.codegen
 
 import java.io.File
+import org.objectweb.asm.Type
 
 /**
  * Same surface as [MethodIdTableBytecodeEmitter], but emits `.java` for pipelines that consume
@@ -107,6 +108,7 @@ object MethodIdTableJavaEmitter {
     if (internal.startsWith("L") && internal.endsWith(";")) {
       return internal.substring(1, internal.length - 1).replace('/', '.') + ".class"
     }
-    throw IllegalStateException("Unsupported internal name: $internal")
+    // [MethodIdBinding.userClassInternal] uses ASM internal names (slashes), not L…; descriptors.
+    return Type.getObjectType(internal).className + ".class"
   }
 }

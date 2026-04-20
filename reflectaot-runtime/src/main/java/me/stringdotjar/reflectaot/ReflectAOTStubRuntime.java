@@ -10,7 +10,7 @@ public final class ReflectAOTStubRuntime implements ReflectAOTRuntime {
 
   @Override
   public boolean hasField(Object o, String name) {
-    return false;
+    throw new UnsupportedOperationException("hasField not specialized for " + safe(o) + " / " + name);
   }
 
   @Override

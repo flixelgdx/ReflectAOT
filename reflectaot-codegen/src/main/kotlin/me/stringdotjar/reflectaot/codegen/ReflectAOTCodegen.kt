@@ -41,6 +41,22 @@ object ReflectAOTCodegen {
       )
     }
 
+    val unresolvedMemberNameLiterals =
+      scan.reflectCalls.filter { site ->
+        site.reflectMethod in ReflectApiNames.NEEDS_COMPILE_TIME_MEMBER_NAME_LITERAL &&
+          site.receiverInternalOrNull != null &&
+          site.nameLiteralOrNull == null
+      }
+    if (unresolvedMemberNameLiterals.isNotEmpty()) {
+      val sample =
+        unresolvedMemberNameLiterals.take(5).joinToString { "${it.reflectMethod}(…)" }
+      throw IllegalStateException(
+        "ReflectAOT: member name must be a compile-time string literal for Reflect.field, setField, property, setProperty, and hasField " +
+          "so the build can validate names ($sample). " +
+          "Variables, concatenation, and non-constant expressions are not supported.",
+      )
+    }
+
     val internals = LinkedHashSet<String>()
     for (c in scan.reflectCalls) {
       c.receiverInternalOrNull?.let { internals.add(it) }
@@ -121,6 +137,12 @@ object ReflectAOTCodegen {
             )
           }
           if ((meta.access and Opcodes.ACC_FINAL) != 0) {
+            if (ReflectPropertyAnalysis.canWritePropertyName(t, name)) {
+              throw IllegalStateException(
+                "ReflectAOT: Reflect.${site.reflectMethod} cannot assign final field \"$name\" on ${recv.replace('/', '.')}. " +
+                  "Use Reflect.${ReflectApiNames.SET_PROPERTY}(…) instead — a public setter or another writable path exists.",
+              )
+            }
             throw IllegalStateException(
               "ReflectAOT: Reflect.${site.reflectMethod} cannot assign \"$name\" on ${recv.replace('/', '.')}: field is final.",
             )
