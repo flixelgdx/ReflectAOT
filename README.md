@@ -66,6 +66,8 @@ After `compileJava` (and `compileKotlin` when the Kotlin JVM plugin is present),
 
 It looks for `invokestatic` calls into `me.stringdotjar.reflectaot.Reflect` for a focused set of members (`field`, `setField`, `getProperty`, `setProperty`, `hasField`, `fields`, `callMethod`).
 
+For member names passed to `field`, `setField`, `property`, `setProperty`, and `hasField`, the scanner resolves string literals and `String` locals that are assigned from a supported constant chain in the same method (for example `String n = "x"; Reflect.field(o, n)`). Method parameters, concatenation, and other non-constant shapes are not traced.
+
 When the receiver type is visible in bytecode as a concrete class, ReflectAOT generates per-type accessors plus a `ReflectAOTRegistry` implementation.
 
 When the receiver is only `java.lang.Object` at the call site, the build fails with an actionable error (narrow types, or add `reflectaot { extraClasses.add("fully.qualified.Name") }`).
