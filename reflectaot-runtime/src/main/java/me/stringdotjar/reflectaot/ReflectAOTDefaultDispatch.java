@@ -3,7 +3,7 @@ package me.stringdotjar.reflectaot;
 import java.util.List;
 
 /**
- * Hand-written {@link ReflectAOTRuntime} behaviors that do not require per-type generated
+ * Handwritten {@link ReflectAOTRuntime} behaviors that do not require per-type generated
  * accessors.
  *
  * <p>These helpers are called from generated {@code ReflectAOTRegistry} implementations so

@@ -14,10 +14,10 @@ import org.objectweb.asm.commons.Method as AsmMethod
  */
 object AccessBytecodeEmitter {
 
-  private val OBJECT_TYPE = Type.getType(Object::class.java)
+  private val OBJECT_TYPE = Type.getType(Any::class.java)
   private val STRING_TYPE = Type.getType(String::class.java)
   private val STRING_ARRAY_TYPE = Type.getType("[Ljava/lang/String;")
-  private val LIST_TYPE = Type.getType(java.util.List::class.java)
+  private val LIST_TYPE = Type.getType(List::class.java)
 
   /**
    * Returns the stable internal name for the accessor class that specializes calls for [typeInternal].
@@ -75,20 +75,19 @@ object AccessBytecodeEmitter {
   }
 
   private fun emitField(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
-    val m = AsmMethod(ReflectApiNames.FIELD, Type.getType(Object::class.java), arrayOf(ownerType, STRING_TYPE))
+    val m = AsmMethod(ReflectApiNames.FIELD, Type.getType(Any::class.java), arrayOf(ownerType, STRING_TYPE))
     val ga = verifyNonNull(m, cw)
 
     for ((name, desc) in type.fields) {
       stringEqualsThen(
         ga,
         name,
-        {
-          ga.loadArg(0)
-          ga.getField(ownerType, name, Type.getType(desc))
-          ga.box(Type.getType(desc))
-          ga.returnValue()
-        },
-      )
+      ) {
+        ga.loadArg(0)
+        ga.getField(ownerType, name, Type.getType(desc))
+        ga.box(Type.getType(desc))
+        ga.returnValue()
+      }
     }
     ga.throwException(Type.getType(IllegalArgumentException::class.java), "Unknown field")
     ga.endMethod()
@@ -135,11 +134,10 @@ object AccessBytecodeEmitter {
       stringEqualsThen(
         ga,
         n,
-        {
-          ga.push(true)
-          ga.returnValue()
-        },
-      )
+      ) {
+        ga.push(true)
+        ga.returnValue()
+      }
     }
     ga.push(false)
     ga.returnValue()
@@ -147,7 +145,7 @@ object AccessBytecodeEmitter {
   }
 
   private fun emitProperty(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
-    val m = AsmMethod(ReflectApiNames.PROPERTY, Type.getType(Object::class.java), arrayOf(ownerType, STRING_TYPE))
+    val m = AsmMethod(ReflectApiNames.PROPERTY, Type.getType(Any::class.java), arrayOf(ownerType, STRING_TYPE))
     val ga = verifyNonNull(m, cw)
 
     for (p in type.properties) {
@@ -157,33 +155,31 @@ object AccessBytecodeEmitter {
       stringEqualsThen(
         ga,
         p.name,
-        {
-          if (p.getterName != null && p.getterDesc != null) {
-            ga.loadArg(0)
-            val rt = Type.getReturnType(p.getterDesc)
-            ga.invokeVirtual(ownerType, AsmMethod(p.getterName!!, p.getterDesc))
-            ga.box(rt)
-          } else {
-            ga.loadArg(0)
-            val fd = type.fields[p.fieldName!!]!!
-            ga.getField(ownerType, p.fieldName!!, Type.getType(fd))
-            ga.box(Type.getType(fd))
-          }
-          ga.returnValue()
-        },
-      )
+      ) {
+        if (p.getterName != null && p.getterDesc != null) {
+          ga.loadArg(0)
+          val rt = Type.getReturnType(p.getterDesc)
+          ga.invokeVirtual(ownerType, AsmMethod(p.getterName, p.getterDesc))
+          ga.box(rt)
+        } else {
+          ga.loadArg(0)
+          val fd = type.fields[p.fieldName!!]!!
+          ga.getField(ownerType, p.fieldName, Type.getType(fd))
+          ga.box(Type.getType(fd))
+        }
+        ga.returnValue()
+      }
     }
     for ((name, desc) in type.fields) {
       stringEqualsThen(
         ga,
         name,
-        {
-          ga.loadArg(0)
-          ga.getField(ownerType, name, Type.getType(desc))
-          ga.box(Type.getType(desc))
-          ga.returnValue()
-        },
-      )
+      ) {
+        ga.loadArg(0)
+        ga.getField(ownerType, name, Type.getType(desc))
+        ga.box(Type.getType(desc))
+        ga.returnValue()
+      }
     }
     ga.throwException(Type.getType(IllegalArgumentException::class.java), "Unknown property")
     ga.endMethod()
@@ -200,41 +196,39 @@ object AccessBytecodeEmitter {
       stringEqualsThen(
         ga,
         p.name,
-        {
-          if (p.setterName != null && p.setterDesc != null) {
-            val args = Type.getArgumentTypes(p.setterDesc)
-            if (args.size == 1) {
-              ga.loadArg(0)
-              ga.loadArg(2)
-              ga.unbox(args[0])
-              ga.invokeVirtual(ownerType, AsmMethod(p.setterName!!, p.setterDesc))
-              ga.returnValue()
-            }
-          }
-          if (p.fieldName != null && type.fieldsWritable.containsKey(p.fieldName)) {
+      ) {
+        if (p.setterName != null && p.setterDesc != null) {
+          val args = Type.getArgumentTypes(p.setterDesc)
+          if (args.size == 1) {
             ga.loadArg(0)
             ga.loadArg(2)
-            val ft = Type.getType(type.fieldsWritable[p.fieldName]!!)
-            ga.unbox(ft)
-            ga.putField(ownerType, p.fieldName!!, ft)
+            ga.unbox(args[0])
+            ga.invokeVirtual(ownerType, AsmMethod(p.setterName, p.setterDesc))
             ga.returnValue()
           }
-        },
-      )
+        }
+        if (p.fieldName != null && type.fieldsWritable.containsKey(p.fieldName)) {
+          ga.loadArg(0)
+          ga.loadArg(2)
+          val ft = Type.getType(type.fieldsWritable[p.fieldName]!!)
+          ga.unbox(ft)
+          ga.putField(ownerType, p.fieldName, ft)
+          ga.returnValue()
+        }
+      }
     }
     for ((name, desc) in type.fieldsWritable) {
       stringEqualsThen(
         ga,
         name,
-        {
-          ga.loadArg(0)
-          ga.loadArg(2)
-          val ft = Type.getType(desc)
-          ga.unbox(ft)
-          ga.putField(ownerType, name, ft)
-          ga.returnValue()
-        },
-      )
+      ) {
+        ga.loadArg(0)
+        ga.loadArg(2)
+        val ft = Type.getType(desc)
+        ga.unbox(ft)
+        ga.putField(ownerType, name, ft)
+        ga.returnValue()
+      }
     }
     ga.throwException(Type.getType(IllegalArgumentException::class.java), "Unknown property")
     ga.endMethod()
@@ -246,7 +240,7 @@ object AccessBytecodeEmitter {
       allBindings
         .filter { JvmSubtype.isSubtype(type.internalName, it.userClassInternal, roots) }
         .sortedBy { it.id }
-    val m = AsmMethod(ReflectApiNames.CALL_METHOD, Type.getType(Object::class.java), arrayOf(ownerType, Type.INT_TYPE, LIST_TYPE))
+    val m = AsmMethod(ReflectApiNames.CALL_METHOD, Type.getType(Any::class.java), arrayOf(ownerType, Type.INT_TYPE, LIST_TYPE))
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
     ga.visitCode()
     if (bindings.isEmpty()) {
