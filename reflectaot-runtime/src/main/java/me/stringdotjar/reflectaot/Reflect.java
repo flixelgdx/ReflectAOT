@@ -363,8 +363,11 @@ public final class Reflect {
   /**
    * Checks whether a field with the given name exists on the target instance.
    *
-   * <p>Implementations should include inherited fields from superclasses. Returning {@code false}
-   * means the field cannot be resolved for read or write operations.
+   * <p>Implementations should include inherited fields from superclasses where metadata allows.
+   *
+   * <p>When ReflectAOT has installed specialized dispatch for the receiver type, names that are not present still
+   * yield {@code false} at runtime. They are not rejected at codegen time (unlike {@link #field}, {@link #property},
+   * and similar APIs that validate known members when names are constant in bytecode).
    *
    * @param o receiver object
    * @param field field name to search for

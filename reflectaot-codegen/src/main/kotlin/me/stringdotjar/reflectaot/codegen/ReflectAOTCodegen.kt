@@ -141,7 +141,7 @@ object ReflectAOTCodegen {
    *
    * @param scan Aggregated output from [ReflectUsageScanner.scanClasspath].
    * @param typesByInternal Map from JVM internal name to loaded [TypeIntrospection.IntrospectedType] instances.
-   * @throws IllegalStateException When a referenced name is missing, not visible, or violates setter or final-field rules enforced by ReflectAOT.
+   * @throws IllegalStateException When a referenced name is missing, not visible, or violates setter or final-field rules enforced by ReflectAOT for field-like APIs other than `hasField` (which treats unknown names as false at runtime).
    */
   private fun validateReflectNames(scan: ClasspathScanResult, typesByInternal: Map<String, TypeIntrospection.IntrospectedType>) {
     for (site in scan.reflectCalls) {
@@ -234,19 +234,6 @@ object ReflectAOTCodegen {
                 """
                 ReflectAOT: no writable property or non-final public field "$name" on $recvDotted (from Reflect.${site.reflectMethod}).
                 Final fields and fields without a public setter cannot be written via Reflect.${site.reflectMethod}.
-                """,
-              ),
-            )
-          }
-        }
-        ReflectApiNames.HAS_FIELD -> {
-          val propNames = t.properties.map { it.name }.toSet()
-          val ok = name in t.instanceFieldsMeta || name in propNames
-          if (!ok) {
-            throw IllegalStateException(
-              oneLine(
-                """
-                ReflectAOT: unknown field or property name "$name" on $recvDotted (from Reflect.${site.reflectMethod}).
                 """,
               ),
             )
