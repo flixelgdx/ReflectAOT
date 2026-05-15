@@ -33,9 +33,8 @@ object MethodIdTableJavaEmitter {
     sb.append("\n  public ReflectAOTMethodIdTable() {}\n\n")
     sb.append("  public ReflectMethodId resolve(Class<?> clazz, String name, String descriptor) {\n")
     if (sorted.isEmpty()) {
-      sb.append("    throw new IllegalArgumentException(\"")
-      sb.append(MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.noReflectMethodCallSites()))
-      sb.append("\");\n")
+      val msg = MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.noReflectMethodCallSites())
+      sb.append("    throw new IllegalArgumentException(\"$msg\");\n")
     } else {
       for (b in sorted) {
         val fq = internalToClassLiteralSource(b.userClassInternal)
@@ -45,35 +44,32 @@ object MethodIdTableJavaEmitter {
         sb.append("      return M").append(b.id).append(";\n")
         sb.append("    }\n")
       }
-      sb.append("    throw new IllegalArgumentException(\"")
-      sb.append(MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.unknownReflectMethodTriple()))
-      sb.append("\");\n")
+      val msg = MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.unknownReflectMethodTriple())
+      sb.append("    throw new IllegalArgumentException(\"$msg\");\n")
     }
     sb.append("  }\n\n")
     sb.append("  public ReflectMethodId resolve(Class<?> clazz, String name) {\n")
     if (sorted.isEmpty()) {
-      sb.append("    throw new IllegalArgumentException(\"")
-      sb.append(MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.noReflectMethodCallSites()))
-      sb.append("\");\n")
+      val msg = MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.noReflectMethodCallSites())
+      sb.append("    throw new IllegalArgumentException(\"$msg\");\n")
     } else {
       sb.append("    int matches = 0;\n")
       sb.append("    ReflectMethodId found = null;\n")
+      val ambiguousMsg =
+        MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.ambiguousReflectMethodClassAndName())
       for (b in sorted) {
         val fq = internalToClassLiteralSource(b.userClassInternal)
         sb.append("    if (clazz == ").append(fq).append(" && \"").append(escape(b.name)).append("\".equals(name)) {\n")
         sb.append("      if (matches != 0) {\n")
-        sb.append("        throw new IllegalArgumentException(\"")
-        sb.append(MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.ambiguousReflectMethodClassAndName()))
-        sb.append("\");\n")
+        sb.append("        throw new IllegalArgumentException(\"$ambiguousMsg\");\n")
         sb.append("      }\n")
         sb.append("      matches = 1;\n")
         sb.append("      found = M").append(b.id).append(";\n")
         sb.append("    }\n")
       }
       sb.append("    if (matches == 0) {\n")
-      sb.append("      throw new IllegalArgumentException(\"")
-      sb.append(MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.unknownReflectMethodClassAndName()))
-      sb.append("\");\n")
+      val msg = MethodIdTableMessages.escapeJavaStringLiteralContent(MethodIdTableMessages.unknownReflectMethodClassAndName())
+      sb.append("      throw new IllegalArgumentException(\"$msg\");\n")
       sb.append("    }\n")
       sb.append("    return found;\n")
     }
@@ -119,7 +115,7 @@ object MethodIdTableJavaEmitter {
             if (s.startsWith("L") && s.endsWith(";")) {
               s.substring(1, s.length - 1).replace('/', '.')
             } else {
-              throw IllegalStateException("Unsupported type in descriptor: " + internal)
+              throw IllegalStateException("Unsupported type in descriptor: $internal")
             }
         }
       return base + "[]".repeat(dims) + ".class"

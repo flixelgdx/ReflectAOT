@@ -7,7 +7,7 @@ package me.stringdotjar.reflectaot.codegen
  */
 object MethodIdTableMessages {
 
-  private val reflectMethodName: String = ReflectApiNames.METHOD
+  private val m: String = ReflectApiNames.METHOD
 
   /**
    * Message when codegen produced no `Reflect.method` bindings but the resolver is still invoked.
@@ -15,8 +15,9 @@ object MethodIdTableMessages {
    * @return English explanation for `IllegalArgumentException` at runtime.
    */
   fun noReflectMethodCallSites(): String =
-    "No Reflect." + reflectMethodName + " call sites were generated; remove Reflect." + reflectMethodName +
-      " calls or run codegen after adding them."
+    """
+    No Reflect.$m call sites were generated; remove Reflect.$m calls or run codegen after adding them.
+    """.trimIndent().replace("\n", " ").trim()
 
   /**
    * Message when `resolve(Class, String, String)` does not match any generated binding.
@@ -24,7 +25,7 @@ object MethodIdTableMessages {
    * @return English explanation for `IllegalArgumentException` at runtime.
    */
   fun unknownReflectMethodTriple(): String =
-    "Unknown Reflect." + reflectMethodName + " (class, name, descriptor) combination"
+    "Unknown Reflect.$m (class, name, descriptor) combination"
 
   /**
    * Message when `resolve(Class, String)` finds no matching overload name on the class.
@@ -32,8 +33,9 @@ object MethodIdTableMessages {
    * @return English explanation for `IllegalArgumentException` at runtime.
    */
   fun unknownReflectMethodClassAndName(): String =
-    "Unknown Reflect." + reflectMethodName + " (class, name); use Reflect." + reflectMethodName +
-      "(Class, String, String) with a JVM descriptor."
+    """
+    Unknown Reflect.$m (class, name); use Reflect.$m(Class, String, String) with a JVM descriptor.
+    """.trimIndent().replace("\n", " ").trim()
 
   /**
    * Message when `resolve(Class, String)` matches more than one overload for the same name.
@@ -41,8 +43,9 @@ object MethodIdTableMessages {
    * @return English explanation for `IllegalArgumentException` at runtime.
    */
   fun ambiguousReflectMethodClassAndName(): String =
-    "Ambiguous Reflect." + reflectMethodName + " (class, name): multiple overloads share that name; use Reflect." +
-      reflectMethodName + "(Class, String, String) with a JVM descriptor."
+    """
+    Ambiguous Reflect.$m (class, name): multiple overloads share that name; use Reflect.$m(Class, String, String) with a JVM descriptor.
+    """.trimIndent().replace("\n", " ").trim()
 
   /**
    * Escapes content for embedding inside a Java double-quoted string literal in generated sources.

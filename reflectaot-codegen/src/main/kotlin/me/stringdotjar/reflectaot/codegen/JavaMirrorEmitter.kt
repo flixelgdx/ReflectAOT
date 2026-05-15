@@ -56,7 +56,7 @@ object JavaMirrorEmitter {
 
     sb.append("}\n")
 
-    File(dir, simple + ".java").writeText(sb.toString())
+    File(dir, "$simple.java").writeText(sb.toString())
   }
 
   private fun renderField(fq: String, t: TypeIntrospection.IntrospectedType): String {
@@ -240,7 +240,7 @@ object JavaMirrorEmitter {
     sb.append("  public static Object ").append(ReflectApiNames.CALL_METHOD).append("(").append(fq).append(" o, int methodId, java.util.List<?> args) {\n")
     if (bindings.isEmpty()) {
       sb.append(
-        "    throw new IllegalArgumentException(\"No Reflect." + ReflectApiNames.METHOD + " bindings for " + fq + "\");\n",
+        "    throw new IllegalArgumentException(\"No Reflect.${ReflectApiNames.METHOD} bindings for $fq\");\n",
       )
       sb.append("  }\n\n")
       return sb.toString()
@@ -254,7 +254,7 @@ object JavaMirrorEmitter {
         sb.append(unboxArgFromList("args.get(" + i + ")", argTypes[i])).append(";\n")
       }
       val ret = Type.getReturnType(b.descriptor)
-      val argsCsv = (argTypes.indices).joinToString(", ") { "a" + it }
+      val argsCsv = (argTypes.indices).joinToString(", ") { "a$it" }
       if (ret == Type.VOID_TYPE) {
         sb.append("        o.").append(b.name).append("(").append(argsCsv).append(");\n")
         sb.append("        return null;\n")

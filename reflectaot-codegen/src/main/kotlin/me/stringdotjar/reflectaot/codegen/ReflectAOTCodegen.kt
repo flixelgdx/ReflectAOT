@@ -21,6 +21,10 @@ object ReflectAOTCodegen {
 
   private fun dotted(internal: String): String = internal.replace('/', '.')
 
+  /** Collapses a trim-indented multiline template into one line for [IllegalStateException] messages. */
+  private fun oneLine(multiline: String): String =
+    multiline.trimIndent().replace("\n", " ").trim()
+
   /**
    * Executes the full ReflectAOT pipeline for the given scan roots and writes generated artifacts.
    *
@@ -43,8 +47,12 @@ object ReflectAOTCodegen {
     if (unresolvedReflect.isNotEmpty()) {
       val sample = unresolvedReflect.take(5).joinToString { it.reflectMethod }
       throw IllegalStateException(
-        "ReflectAOT: cannot infer concrete receiver types for some Reflect calls (" + sample + "). " +
-          "Narrow the receiver type in bytecode (casts or locals) or add reflectaot { extraClasses.add(\"com.example.Concrete\") }.",
+        oneLine(
+          """
+          ReflectAOT: cannot infer concrete receiver types for some Reflect calls ($sample).
+          Narrow the receiver type in bytecode (casts or locals) or add reflectaot { extraClasses.add("com.example.Concrete") }.
+          """,
+        ),
       )
     }
 
@@ -54,9 +62,13 @@ object ReflectAOTCodegen {
       }
     if (unresolvedMethodIds.isNotEmpty()) {
       throw IllegalStateException(
-        "ReflectAOT: Reflect." + ReflectApiNames.METHOD + "(...) must use a reference type class operand and string operands " +
-          "that resolve as literals or same-method locals bound to supported constant chains so the build can resolve the method. " +
-          "Primitive class tokens, parameters, concatenation, and other non-constant forms are not supported.",
+        oneLine(
+          """
+          ReflectAOT: Reflect.${ReflectApiNames.METHOD}(...) must use a reference type class operand and string operands
+          that resolve as literals or same-method locals bound to supported constant chains so the build can resolve the method.
+          Primitive class tokens, parameters, concatenation, and other non-constant forms are not supported.
+          """,
+        ),
       )
     }
 
@@ -68,12 +80,16 @@ object ReflectAOTCodegen {
       }
     if (unresolvedMemberNameLiterals.isNotEmpty()) {
       val sample =
-        unresolvedMemberNameLiterals.take(5).joinToString { it.reflectMethod + "(...)" }
+        unresolvedMemberNameLiterals.take(5).joinToString { "${it.reflectMethod}(...)" }
       throw IllegalStateException(
-        "ReflectAOT: member name must be a string literal or a String local assigned from a supported constant " +
-          "expression in the same method for Reflect.field, setField, property, setProperty, and hasField " +
-          "so the build can validate names (" + sample + "). " +
-          "Method parameters, string concatenation, and other non-constant forms are not supported.",
+        oneLine(
+          """
+          ReflectAOT: member name must be a string literal or a String local assigned from a supported constant
+          expression in the same method for Reflect.field, setField, property, setProperty, and hasField
+          so the build can validate names ($sample).
+          Method parameters, string concatenation, and other non-constant forms are not supported.
+          """,
+        ),
       )
     }
 
@@ -93,8 +109,12 @@ object ReflectAOTCodegen {
       val loaded =
         TypeIntrospection.load(internal, scanRoots)
           ?: throw IllegalStateException(
-            "ReflectAOT: could not load class bytes for " + internal + " from scan inputs. " +
-              "Ensure it is compiled before generateReflectAOT runs.",
+            oneLine(
+              """
+              ReflectAOT: could not load class bytes for $internal from scan inputs.
+              Ensure it is compiled before generateReflectAOT runs.
+              """,
+            ),
           )
       types.add(loaded)
     }
@@ -134,14 +154,22 @@ object ReflectAOTCodegen {
           val meta =
             t.instanceFieldsMeta[name]
               ?: throw IllegalStateException(
-                "ReflectAOT: unknown field \"" + name + "\" on " + recvDotted + " (from Reflect." + site.reflectMethod + "). " +
-                  "Fix the name or add the correct receiver type to reflectaot.extraClasses.",
+                oneLine(
+                  """
+                  ReflectAOT: unknown field "$name" on $recvDotted (from Reflect.${site.reflectMethod}).
+                  Fix the name or add the correct receiver type to reflectaot.extraClasses.
+                  """,
+                ),
               )
           if ((meta.access and Opcodes.ACC_PUBLIC) == 0) {
             throw IllegalStateException(
-              "ReflectAOT: Reflect." + site.reflectMethod + " cannot access \"" + name + "\" on " + recvDotted + ": " +
-                "field is " + TypeIntrospection.visibilityWord(meta.access) + ". " +
-                "Only public instance fields are supported for direct field access; use Reflect.property(...) / Reflect.setProperty(...) with JavaBeans accessors when the member is not public.",
+              oneLine(
+                """
+                ReflectAOT: Reflect.${site.reflectMethod} cannot access "$name" on $recvDotted:
+                field is ${TypeIntrospection.visibilityWord(meta.access)}.
+                Only public instance fields are supported for direct field access; use Reflect.property(...) / Reflect.setProperty(...) with JavaBeans accessors when the member is not public.
+                """,
+              ),
             )
           }
         }
@@ -149,41 +177,65 @@ object ReflectAOTCodegen {
           val meta =
             t.instanceFieldsMeta[name]
               ?: throw IllegalStateException(
-                "ReflectAOT: unknown field \"" + name + "\" on " + recvDotted + " (from Reflect." + site.reflectMethod + "). " +
-                  "Fix the name or add the correct receiver type to reflectaot.extraClasses.",
+                oneLine(
+                  """
+                  ReflectAOT: unknown field "$name" on $recvDotted (from Reflect.${site.reflectMethod}).
+                  Fix the name or add the correct receiver type to reflectaot.extraClasses.
+                  """,
+                ),
               )
           if ((meta.access and Opcodes.ACC_PUBLIC) == 0) {
             throw IllegalStateException(
-              "ReflectAOT: Reflect." + site.reflectMethod + " cannot access \"" + name + "\" on " + recvDotted + ": " +
-                "field is " + TypeIntrospection.visibilityWord(meta.access) + ". " +
-                "Only public instance fields can be assigned via Reflect." + ReflectApiNames.SET_FIELD + "; use Reflect." + ReflectApiNames.SET_PROPERTY + " with a setter when the field is not public.",
+              oneLine(
+                """
+                ReflectAOT: Reflect.${site.reflectMethod} cannot access "$name" on $recvDotted:
+                field is ${TypeIntrospection.visibilityWord(meta.access)}.
+                Only public instance fields can be assigned via Reflect.${ReflectApiNames.SET_FIELD}; use Reflect.${ReflectApiNames.SET_PROPERTY} with a setter when the field is not public.
+                """,
+              ),
             )
           }
           if ((meta.access and Opcodes.ACC_FINAL) != 0) {
             if (ReflectPropertyAnalysis.canWritePropertyName(t, name)) {
               throw IllegalStateException(
-                "ReflectAOT: Reflect." + site.reflectMethod + " cannot assign final field \"" + name + "\" on " + recvDotted + ". " +
-                  "Use Reflect." + ReflectApiNames.SET_PROPERTY + "(...) instead. A public setter or another writable path exists.",
+                oneLine(
+                  """
+                  ReflectAOT: Reflect.${site.reflectMethod} cannot assign final field "$name" on $recvDotted.
+                  Use Reflect.${ReflectApiNames.SET_PROPERTY}(...) instead. A public setter or another writable path exists.
+                  """,
+                ),
               )
             }
             throw IllegalStateException(
-              "ReflectAOT: Reflect." + site.reflectMethod + " cannot assign \"" + name + "\" on " + recvDotted + ": field is final.",
+              oneLine(
+                """
+                ReflectAOT: Reflect.${site.reflectMethod} cannot assign "$name" on $recvDotted: field is final.
+                """,
+              ),
             )
           }
         }
         ReflectApiNames.PROPERTY -> {
           if (!ReflectPropertyAnalysis.canReadPropertyName(t, name)) {
             throw IllegalStateException(
-              "ReflectAOT: no readable property or public field \"" + name + "\" on " + recvDotted + " (from Reflect." + site.reflectMethod + "). " +
-                "Use a JavaBeans getter name, or only public fields for direct reads.",
+              oneLine(
+                """
+                ReflectAOT: no readable property or public field "$name" on $recvDotted (from Reflect.${site.reflectMethod}).
+                Use a JavaBeans getter name, or only public fields for direct reads.
+                """,
+              ),
             )
           }
         }
         ReflectApiNames.SET_PROPERTY -> {
           if (!ReflectPropertyAnalysis.canWritePropertyName(t, name)) {
             throw IllegalStateException(
-              "ReflectAOT: no writable property or non-final public field \"" + name + "\" on " + recvDotted + " (from Reflect." + site.reflectMethod + "). " +
-                "Final fields and fields without a public setter cannot be written via Reflect." + site.reflectMethod + ".",
+              oneLine(
+                """
+                ReflectAOT: no writable property or non-final public field "$name" on $recvDotted (from Reflect.${site.reflectMethod}).
+                Final fields and fields without a public setter cannot be written via Reflect.${site.reflectMethod}.
+                """,
+              ),
             )
           }
         }
@@ -192,7 +244,11 @@ object ReflectAOTCodegen {
           val ok = name in t.instanceFieldsMeta || name in propNames
           if (!ok) {
             throw IllegalStateException(
-              "ReflectAOT: unknown field or property name \"" + name + "\" on " + recvDotted + " (from Reflect." + site.reflectMethod + ").",
+              oneLine(
+                """
+                ReflectAOT: unknown field or property name "$name" on $recvDotted (from Reflect.${site.reflectMethod}).
+                """,
+              ),
             )
           }
         }
@@ -216,7 +272,7 @@ object ReflectAOTCodegen {
       val t =
         typesByInternal[o]
           ?: throw IllegalStateException(
-            "ReflectAOT: could not load class bytes for Reflect." + ReflectApiNames.METHOD + " owner " + dotted(o) + ".",
+            "ReflectAOT: could not load class bytes for Reflect.${ReflectApiNames.METHOD} owner ${dotted(o)}.",
           )
       val d =
         if (s.descriptorOrNull != null) {
@@ -227,14 +283,18 @@ object ReflectAOTCodegen {
           when (candidates.size) {
             0 ->
               throw IllegalStateException(
-                "ReflectAOT: no public instance method named \"" + n + "\" on " + dotted(o) + " for Reflect." + ReflectApiNames.METHOD + "(Class, String).",
+                "ReflectAOT: no public instance method named \"$n\" on ${dotted(o)} for Reflect.${ReflectApiNames.METHOD}(Class, String).",
               )
             1 -> candidates[0].descriptor
             else ->
               throw IllegalStateException(
-                "ReflectAOT: method \"" + n + "\" on " + dotted(o) + " is overloaded; cannot use Reflect." + ReflectApiNames.METHOD + "(Class, String). " +
-                  "Overloads: " + candidates.joinToString { it.descriptor } + ". " +
-                  "Use Reflect." + ReflectApiNames.METHOD + "(" + dotted(o) + ".class, \"" + n + "\", \"<descriptor>\") with the JVM descriptor of the overload you need.",
+                oneLine(
+                  """
+                  ReflectAOT: method "$n" on ${dotted(o)} is overloaded; cannot use Reflect.${ReflectApiNames.METHOD}(Class, String).
+                  Overloads: ${candidates.joinToString { it.descriptor }}.
+                  Use Reflect.${ReflectApiNames.METHOD}(${dotted(o)}.class, "$n", "<descriptor>") with the JVM descriptor of the overload you need.
+                  """,
+                ),
               )
           }
         }
@@ -247,12 +307,12 @@ object ReflectAOTCodegen {
       val t =
         typesByInternal[o]
           ?: throw IllegalStateException(
-            "ReflectAOT: could not load class bytes for Reflect." + ReflectApiNames.METHOD + " owner " + dotted(o) + ".",
+            "ReflectAOT: could not load class bytes for Reflect.${ReflectApiNames.METHOD} owner ${dotted(o)}.",
           )
       val im =
         t.instanceMethods.firstOrNull { it.name == n && it.descriptor == d }
           ?: throw IllegalStateException(
-            "ReflectAOT: no public instance method " + n + d + " on " + dotted(o) + " for Reflect." + ReflectApiNames.METHOD + ".",
+            "ReflectAOT: no public instance method $n$d on ${dotted(o)} for Reflect.${ReflectApiNames.METHOD}.",
           )
       out.add(
         MethodIdBinding(
@@ -287,7 +347,7 @@ object ReflectAOTCodegen {
   /**
    * Emits Java source mirrors for accessors, registry, optional bootstrap, and the method id table.
    *
-   * @param javaOutputDir Root directory for generated `.java` files.
+   * @param javaOutputDir Root directory that will receive generated `.java` files.
    * @param types Introspected receiver types that require specialized accessors.
    * @param methodBindings Resolved `Reflect.method` bindings.
    * @param roots Classpath roots forwarded to emitters that need subtype checks.

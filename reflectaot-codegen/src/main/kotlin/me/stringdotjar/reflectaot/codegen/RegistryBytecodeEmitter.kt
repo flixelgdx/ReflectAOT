@@ -106,7 +106,7 @@ object RegistryBytecodeEmitter {
     emitDispatchObjectIntObject(cw, sorted)
 
     cw.visitEnd()
-    val out = File(outputDir, REGISTRY_INTERNAL + ".class")
+    val out = File(outputDir, "$REGISTRY_INTERNAL.class")
     out.parentFile.mkdirs()
     out.writeBytes(cw.toByteArray())
   }
@@ -329,8 +329,8 @@ object RegistryBytecodeEmitter {
   }
 
   private fun reflectOpNotSpecializedNoReceivers(reflectMethodName: String): String =
-    "Reflect." + reflectMethodName + " not specialized (no concrete receiver types discovered)"
+    "Reflect.$reflectMethodName not specialized (no concrete receiver types discovered)"
 
   private fun reflectOpNotSpecializedForReceiver(reflectMethodName: String): String =
-    "Reflect." + reflectMethodName + " not specialized for receiver"
+    "Reflect.$reflectMethodName not specialized for receiver"
 }
