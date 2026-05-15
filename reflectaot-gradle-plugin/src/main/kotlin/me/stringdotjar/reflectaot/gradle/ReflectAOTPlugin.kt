@@ -77,6 +77,9 @@ class ReflectAOTPlugin : Plugin<Project> {
 
     main.java.srcDir(ext.javaOutputDirectory)
 
+    val genClasses = project.files(ext.bytecodeOutputDirectory).builtBy(genTask)
+    project.dependencies.add(JavaPlugin.RUNTIME_ONLY_CONFIGURATION_NAME, genClasses)
+
     project.tasks.named(JavaPlugin.JAR_TASK_NAME, Jar::class.java).configure { jar ->
       jar.from(ext.bytecodeOutputDirectory)
       jar.dependsOn(genTask)
@@ -84,7 +87,6 @@ class ReflectAOTPlugin : Plugin<Project> {
 
     project.tasks.withType(Test::class.java).configureEach { test ->
       test.dependsOn(genTask)
-      test.classpath = test.classpath.plus(project.files(ext.bytecodeOutputDirectory))
     }
 
     project.tasks.named(JavaPlugin.CLASSES_TASK_NAME).configure { classes ->
