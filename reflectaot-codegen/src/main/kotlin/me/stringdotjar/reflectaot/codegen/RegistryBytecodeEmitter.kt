@@ -106,7 +106,7 @@ object RegistryBytecodeEmitter {
     emitDispatchObjectIntObject(cw, sorted)
 
     cw.visitEnd()
-    val out = File(outputDir, "$REGISTRY_INTERNAL.class")
+    val out = File(outputDir, REGISTRY_INTERNAL + ".class")
     out.parentFile.mkdirs()
     out.writeBytes(cw.toByteArray())
   }
@@ -161,7 +161,7 @@ object RegistryBytecodeEmitter {
     if (sorted.isEmpty()) {
       ga.throwException(
         Type.getType(UnsupportedOperationException::class.java),
-        "Reflect.${ReflectApiNames.HAS_FIELD} not specialized (no concrete receiver types discovered)",
+        reflectOpNotSpecializedNoReceivers(ReflectApiNames.HAS_FIELD),
       )
       ga.endMethod()
       return
@@ -183,7 +183,7 @@ object RegistryBytecodeEmitter {
     ga.pop()
     ga.throwException(
       Type.getType(UnsupportedOperationException::class.java),
-      "Reflect.${ReflectApiNames.HAS_FIELD} not specialized for receiver",
+      reflectOpNotSpecializedForReceiver(ReflectApiNames.HAS_FIELD),
     )
     ga.endMethod()
   }
@@ -194,7 +194,7 @@ object RegistryBytecodeEmitter {
     if (sorted.isEmpty()) {
       ga.throwException(
         Type.getType(UnsupportedOperationException::class.java),
-        "Reflect.${ReflectApiNames.FIELD} not specialized (no concrete receiver types discovered)",
+        reflectOpNotSpecializedNoReceivers(ReflectApiNames.FIELD),
       )
       ga.endMethod()
       return
@@ -216,7 +216,7 @@ object RegistryBytecodeEmitter {
     ga.pop()
     ga.throwException(
       Type.getType(UnsupportedOperationException::class.java),
-      "Reflect.${ReflectApiNames.FIELD} not specialized for receiver",
+      reflectOpNotSpecializedForReceiver(ReflectApiNames.FIELD),
     )
     ga.endMethod()
   }
@@ -227,7 +227,7 @@ object RegistryBytecodeEmitter {
     if (sorted.isEmpty()) {
       ga.throwException(
         Type.getType(UnsupportedOperationException::class.java),
-        "Reflect.${ifaceMethod.name} not specialized (no concrete receiver types discovered)",
+        reflectOpNotSpecializedNoReceivers(ifaceMethod.name),
       )
       ga.endMethod()
       return
@@ -250,7 +250,7 @@ object RegistryBytecodeEmitter {
     ga.pop()
     ga.throwException(
       Type.getType(UnsupportedOperationException::class.java),
-      "Reflect.${ifaceMethod.name} not specialized for receiver",
+      reflectOpNotSpecializedForReceiver(ifaceMethod.name),
     )
     ga.endMethod()
   }
@@ -327,4 +327,10 @@ object RegistryBytecodeEmitter {
     ga.returnValue()
     ga.endMethod()
   }
+
+  private fun reflectOpNotSpecializedNoReceivers(reflectMethodName: String): String =
+    "Reflect." + reflectMethodName + " not specialized (no concrete receiver types discovered)"
+
+  private fun reflectOpNotSpecializedForReceiver(reflectMethodName: String): String =
+    "Reflect." + reflectMethodName + " not specialized for receiver"
 }

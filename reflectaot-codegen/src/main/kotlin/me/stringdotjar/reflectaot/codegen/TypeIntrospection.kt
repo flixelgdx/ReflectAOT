@@ -346,7 +346,7 @@ object TypeIntrospection {
    * @return Bytes when a matching resource exists, otherwise null.
    */
   fun loadClassBytes(internalName: String, roots: Collection<File>): ByteArray? {
-    val relPath = "$internalName.class"
+    val relPath = internalName + ".class"
     for (root in roots) {
       if (root.isDirectory) {
         val f = File(root, relPath)

@@ -13,8 +13,8 @@ object JavaBootstrapEmitter {
   /**
    * Writes `ReflectAOTBootstrap.java` under `me/stringdotjar/reflectaot/generated` beneath [outputDir].
    *
- * The generated static block installs the generated `ReflectAOTRegistry` class and `ReflectAOTMethodIdTable` through
- * the public APIs on `ReflectAOTServices` in the runtime module.
+   * The generated static block installs the generated `ReflectAOTRegistry` class and `ReflectAOTMethodIdTable` through
+   * the public APIs on `ReflectAOTServices` in the runtime module.
    *
    * @param outputDir Root directory that will receive the generated Java source tree.
    */
@@ -24,22 +24,16 @@ object JavaBootstrapEmitter {
     pkg.mkdirs()
     val f = File(pkg, "ReflectAOTBootstrap.java")
     f.writeText(
-      """
-      package me.stringdotjar.reflectaot.generated;
-
-      import me.stringdotjar.reflectaot.ReflectAOTServices;
-
-      public final class ReflectAOTBootstrap {
-
-          static {
-              ReflectAOTServices.install(new ReflectAOTRegistry());
-              ReflectAOTServices.installMethodIds(new ReflectAOTMethodIdTable());
-          }
-
-          private ReflectAOTBootstrap() {
-          }
-      }
-      """.trimIndent() + "\n",
+      "package me.stringdotjar.reflectaot.generated;\n\n" +
+        "import me.stringdotjar.reflectaot.ReflectAOTServices;\n\n" +
+        "public final class ReflectAOTBootstrap {\n\n" +
+        "    static {\n" +
+        "        ReflectAOTServices.install(new ReflectAOTRegistry());\n" +
+        "        ReflectAOTServices.installMethodIds(new ReflectAOTMethodIdTable());\n" +
+        "    }\n\n" +
+        "    private ReflectAOTBootstrap() {\n" +
+        "    }\n" +
+        "}\n",
     )
   }
 }

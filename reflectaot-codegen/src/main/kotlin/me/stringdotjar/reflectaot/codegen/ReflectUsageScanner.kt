@@ -396,21 +396,23 @@ object ReflectUsageScanner {
   }
 
   /**
-   * Resolves a string local by walking backward to the most recent `astore` that defines the slot.
+   * Walks backward from a local read to the most recent `astore` for the same slot, then resolves the stored value.
    *
    * @param insns Instruction array for the enclosing method.
-   * @param slot Local variable index read by a string `aload`.
+   * @param slot Local variable index read by an `aload`.
    * @param readInsnIndex Instruction index of the `aload`.
    * @param depth Current recursion depth for chained locals.
-   * @param visitingSlots Slot visitation set shared for one top-level string resolution.
-   * @return The resolved string constant, or null when no matching assignment exists or the assignment is not constant.
+   * @param visitingSlots Slot visitation set shared for one top-level resolution.
+   * @param resolveExpr Resolver for the expression stored into the slot (string or class constant walk).
+   * @return Resolved constant string (member name, descriptor, or internal class name), or null.
    */
-  private fun localStringConstantBoundBeforeRead(
+  private fun localConstantBoundBeforeRead(
     insns: Array<AbstractInsnNode>,
     slot: Int,
     readInsnIndex: Int,
     depth: Int,
     visitingSlots: MutableSet<Int>,
+    resolveExpr: (Array<AbstractInsnNode>, Int, Int, MutableSet<Int>) -> String?,
   ): String? {
     if (depth > 32) {
       return null
@@ -427,7 +429,7 @@ object ReflectUsageScanner {
         }
         val insn = insns[i]
         if (aStoreVarSlot(insn) == slot) {
-          return expressionStringConstant(insns, i - 1, depth + 1, visitingSlots)
+          return resolveExpr(insns, i - 1, depth + 1, visitingSlots)
         }
         i--
       }
@@ -436,6 +438,25 @@ object ReflectUsageScanner {
       visitingSlots.remove(slot)
     }
   }
+
+  /**
+   * Resolves a string local by walking backward to the most recent `astore` that defines the slot.
+   *
+   * @param insns Instruction array for the enclosing method.
+   * @param slot Local variable index read by a string `aload`.
+   * @param readInsnIndex Instruction index of the `aload`.
+   * @param depth Current recursion depth for chained locals.
+   * @param visitingSlots Slot visitation set shared for one top-level string resolution.
+   * @return The resolved string constant, or null when no matching assignment exists or the assignment is not constant.
+   */
+  private fun localStringConstantBoundBeforeRead(
+    insns: Array<AbstractInsnNode>,
+    slot: Int,
+    readInsnIndex: Int,
+    depth: Int,
+    visitingSlots: MutableSet<Int>,
+  ): String? =
+    localConstantBoundBeforeRead(insns, slot, readInsnIndex, depth, visitingSlots, ::expressionStringConstant)
 
   /**
    * Resolves a [Type] LDC representing a reference or array class literal to an internal name.
@@ -526,31 +547,8 @@ object ReflectUsageScanner {
     readInsnIndex: Int,
     depth: Int,
     visitingSlots: MutableSet<Int>,
-  ): String? {
-    if (depth > 32) {
-      return null
-    }
-    if (!visitingSlots.add(slot)) {
-      return null
-    }
-    try {
-      var i = readInsnIndex - 1
-      while (i >= 0) {
-        i = skipNonInstructionsBackward(insns, i)
-        if (i < 0) {
-          return null
-        }
-        val st = insns[i]
-        if (aStoreVarSlot(st) == slot) {
-          return expressionClassConstant(insns, i - 1, depth + 1, visitingSlots)
-        }
-        i--
-      }
-      return null
-    } finally {
-      visitingSlots.remove(slot)
-    }
-  }
+  ): String? =
+    localConstantBoundBeforeRead(insns, slot, readInsnIndex, depth, visitingSlots, ::expressionClassConstant)
 
   /**
    * Recovers a concrete receiver type when the verifier merged the receiver slot to `java/lang/Object`.

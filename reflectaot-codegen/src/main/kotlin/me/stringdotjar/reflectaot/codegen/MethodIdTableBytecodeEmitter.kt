@@ -87,7 +87,7 @@ object MethodIdTableBytecodeEmitter {
       if (sorted.isEmpty()) {
         ga.throwException(
           Type.getType(IllegalArgumentException::class.java),
-          "No Reflect.${ReflectApiNames.METHOD} call sites were generated; remove Reflect.${ReflectApiNames.METHOD} calls or run codegen after adding them.",
+          MethodIdTableMessages.noReflectMethodCallSites(),
         )
         ga.endMethod()
       } else {
@@ -113,7 +113,7 @@ object MethodIdTableBytecodeEmitter {
         }
         ga.throwException(
           Type.getType(IllegalArgumentException::class.java),
-          "Unknown Reflect.${ReflectApiNames.METHOD} (class, name, descriptor) combination",
+          MethodIdTableMessages.unknownReflectMethodTriple(),
         )
         ga.endMethod()
       }
@@ -122,7 +122,7 @@ object MethodIdTableBytecodeEmitter {
     emitResolveClassAndNameOnly(cw, sorted)
 
     cw.visitEnd()
-    val out = File(outputDir, "$TABLE_INTERNAL.class")
+    val out = File(outputDir, TABLE_INTERNAL + ".class")
     out.parentFile.mkdirs()
     out.writeBytes(cw.toByteArray())
   }
@@ -133,7 +133,7 @@ object MethodIdTableBytecodeEmitter {
    * @param id Numeric binding id.
    * @return Field name of the form `M` followed by the decimal id.
    */
-  private fun fieldName(id: Int): String = "M$id"
+  private fun fieldName(id: Int): String = "M" + id
 
   /**
    * Emits bytecode for `resolve(Class, String)` that counts matches across bindings and fails when ambiguous.
@@ -147,7 +147,7 @@ object MethodIdTableBytecodeEmitter {
     if (sorted.isEmpty()) {
       ga.throwException(
         Type.getType(IllegalArgumentException::class.java),
-        "No Reflect.${ReflectApiNames.METHOD} call sites were generated; remove Reflect.${ReflectApiNames.METHOD} calls or run codegen after adding them.",
+        MethodIdTableMessages.noReflectMethodCallSites(),
       )
       ga.endMethod()
       return
@@ -184,12 +184,12 @@ object MethodIdTableBytecodeEmitter {
     ga.mark(notFound)
     ga.throwException(
       Type.getType(IllegalArgumentException::class.java),
-      "Unknown Reflect.${ReflectApiNames.METHOD} (class, name); use Reflect.${ReflectApiNames.METHOD}(Class, String, String) with a JVM descriptor.",
+      MethodIdTableMessages.unknownReflectMethodClassAndName(),
     )
     ga.mark(ambiguous)
     ga.throwException(
       Type.getType(IllegalArgumentException::class.java),
-      "Ambiguous Reflect.${ReflectApiNames.METHOD} (class, name): multiple overloads share that name; use Reflect.${ReflectApiNames.METHOD}(Class, String, String) with a JVM descriptor.",
+      MethodIdTableMessages.ambiguousReflectMethodClassAndName(),
     )
     ga.endMethod()
   }

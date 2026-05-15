@@ -69,7 +69,7 @@ object AccessBytecodeEmitter {
     emitCallMethod(type, cw, ownerType, methodBindings, roots)
 
     cw.visitEnd()
-    val out = File(outputDir, "$accessInternal.class")
+    val out = File(outputDir, accessInternal + ".class")
     out.parentFile.mkdirs()
     out.writeBytes(cw.toByteArray())
   }
@@ -252,7 +252,7 @@ object AccessBytecodeEmitter {
     if (bindings.isEmpty()) {
       ga.throwException(
         Type.getType(IllegalArgumentException::class.java),
-        "No Reflect.${ReflectApiNames.METHOD} bindings for " + type.internalName.replace('/', '.'),
+        "No Reflect." + ReflectApiNames.METHOD + " bindings for " + type.internalName.replace('/', '.'),
       )
       ga.endMethod()
       return
