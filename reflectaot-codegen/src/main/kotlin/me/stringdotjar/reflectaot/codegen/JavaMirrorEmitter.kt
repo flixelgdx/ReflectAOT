@@ -4,12 +4,19 @@ import org.objectweb.asm.Type
 import java.io.File
 
 /**
- * Emits Java 7-compatible sources mirroring [AccessBytecodeEmitter] / [RegistryBytecodeEmitter] for
- * toolchains that require `.java` (e.g. GWT). Signatures align with [ReflectApiNames].
+ * Emits Java 7 compatible sources that mirror [AccessBytecodeEmitter] and [RegistryBytecodeEmitter] for toolchains that
+ * require `.java` inputs. Method signatures align with the static entry points documented on [ReflectApiNames].
  */
 object JavaMirrorEmitter {
 
-  /** Writes `*_ReflectAOT.java` per type plus `ReflectAOTRegistry.java`. */
+  /**
+   * Writes one `*_ReflectAOT.java` accessor per type plus `ReflectAOTRegistry.java` under [javaOut].
+   *
+   * @param javaOut Root directory that will receive the generated Java package tree.
+   * @param types Introspected types that need accessor sources.
+   * @param methodBindings Full method id binding list used when rendering `callMethod` dispatch.
+   * @param roots Classpath roots forwarded to copy and call-method helpers that need subtype checks.
+   */
   fun emit(javaOut: File, types: List<TypeIntrospection.IntrospectedType>, methodBindings: List<MethodIdBinding>, roots: Collection<File>) {
     val sorted = types.sortedBy { it.internalName }
     for (t in sorted) {
@@ -291,7 +298,7 @@ object JavaMirrorEmitter {
       else -> "(" + javaTypeFromDescriptor(t.descriptor) + ") " + expr
     }
 
-  /** Registry `copy` — dispatches to typed accessor `copy`, then default stub. */
+  /** Registry `copy` dispatches to typed accessor `copy`, then the default stub. */
   private fun renderRegistryCopy(sorted: List<TypeIntrospection.IntrospectedType>): String {
     val sb = StringBuilder()
     sb.append("  public Object ").append(ReflectApiNames.COPY).append("(Object o) {\n")
@@ -312,7 +319,7 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  /** Registry `callMethod` — chains `instanceof` to typed accessor static methods. */
+  /** Registry `callMethod` chains `instanceof` checks to typed accessor static methods. */
   private fun renderRegistryCallMethod(sorted: List<TypeIntrospection.IntrospectedType>): String {
     val sb = StringBuilder()
     sb.append("  public Object ").append(ReflectApiNames.CALL_METHOD).append("(Object o, int methodId, java.util.List<?> args) {\n")
@@ -532,7 +539,7 @@ object JavaMirrorEmitter {
       else -> "(" + javaTypeFromDescriptor(desc) + ") " + value
     }
 
-  /** JVM field/method descriptor → Java source type name (including arrays). */
+  /** Maps a JVM field or method descriptor to a Java source type name, including arrays. */
   private fun javaTypeFromDescriptor(descriptor: String): String {
     var i = 0
     while (i < descriptor.length && descriptor[i] == '[') {

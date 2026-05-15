@@ -136,4 +136,123 @@ class ReflectUsageScannerLocalConstantTest {
     assertNotNull(site.receiverInternalOrNull)
     assertEquals("fixture/Holder", site.receiverInternalOrNull)
   }
+
+  @Test
+  fun method_twoArg_resolves_local_string_name() {
+    val out = File(tempDir, "outMethod1")
+    val ok =
+      compileSources(
+        out,
+        StringSource(
+          "fixture.MethodNameLocal",
+          """
+          package fixture;
+          import me.stringdotjar.reflectaot.Reflect;
+          import me.stringdotjar.reflectaot.ReflectMethodId;
+          public class MethodNameLocal {
+            public static ReflectMethodId id() {
+              String n = "run";
+              return Reflect.method(Target.class, n);
+            }
+          }
+          """.trimIndent(),
+        ),
+        StringSource(
+          "fixture.Target",
+          """
+          package fixture;
+          public class Target {
+            public void run() {}
+          }
+          """.trimIndent(),
+        ),
+      )
+    assertTrue(ok)
+    val bytes = readClassBytes(out, "fixture/MethodNameLocal")
+    val (_, mids) = ReflectUsageScanner.scanClass(bytes)
+    val site = mids.single()
+    assertEquals("fixture/Target", site.ownerClassInternalOrNull)
+    assertEquals("run", site.nameOrNull)
+    assertEquals(null, site.descriptorOrNull)
+  }
+
+  @Test
+  fun method_twoArg_resolves_local_class_operand() {
+    val out = File(tempDir, "outMethod2")
+    val ok =
+      compileSources(
+        out,
+        StringSource(
+          "fixture.MethodClassLocal",
+          """
+          package fixture;
+          import me.stringdotjar.reflectaot.Reflect;
+          import me.stringdotjar.reflectaot.ReflectMethodId;
+          public class MethodClassLocal {
+            public static ReflectMethodId id() {
+              Class<?> c = Target.class;
+              return Reflect.method(c, "run");
+            }
+          }
+          """.trimIndent(),
+        ),
+        StringSource(
+          "fixture.Target",
+          """
+          package fixture;
+          public class Target {
+            public void run() {}
+          }
+          """.trimIndent(),
+        ),
+      )
+    assertTrue(ok)
+    val bytes = readClassBytes(out, "fixture/MethodClassLocal")
+    val (_, mids) = ReflectUsageScanner.scanClass(bytes)
+    val site = mids.single()
+    assertEquals("fixture/Target", site.ownerClassInternalOrNull)
+    assertEquals("run", site.nameOrNull)
+    assertEquals(null, site.descriptorOrNull)
+  }
+
+  @Test
+  fun method_threeArg_resolves_local_name_and_descriptor() {
+    val out = File(tempDir, "outMethod3")
+    val ok =
+      compileSources(
+        out,
+        StringSource(
+          "fixture.MethodThreeLocal",
+          """
+          package fixture;
+          import me.stringdotjar.reflectaot.Reflect;
+          import me.stringdotjar.reflectaot.ReflectMethodId;
+          public class MethodThreeLocal {
+            public static ReflectMethodId id() {
+              Class<?> c = Target.class;
+              String n = "run";
+              String d = "()V";
+              return Reflect.method(c, n, d);
+            }
+          }
+          """.trimIndent(),
+        ),
+        StringSource(
+          "fixture.Target",
+          """
+          package fixture;
+          public class Target {
+            public void run() {}
+          }
+          """.trimIndent(),
+        ),
+      )
+    assertTrue(ok)
+    val bytes = readClassBytes(out, "fixture/MethodThreeLocal")
+    val (_, mids) = ReflectUsageScanner.scanClass(bytes)
+    val site = mids.single()
+    assertEquals("fixture/Target", site.ownerClassInternalOrNull)
+    assertEquals("run", site.nameOrNull)
+    assertEquals("()V", site.descriptorOrNull)
+  }
 }

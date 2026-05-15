@@ -1,14 +1,14 @@
 package me.stringdotjar.reflectaot.codegen
 
 /**
- * JVM-visible **method names** and wiring constants for [me.stringdotjar.reflectaot.Reflect].
+ * JVM-visible method names and wiring constants for [me.stringdotjar.reflectaot.Reflect].
  *
- * The scanner matches **invokestatic** instructions where `owner` is [REFLECT_INTERNAL] and `name`
- * equals one of the `const val` entries below. If you rename a method in `Reflect.java`, update
- * this object (and any runtime messages) so scanning and generated bridges stay aligned.
+ * The scanner matches `invokestatic` instructions where `owner` is [REFLECT_INTERNAL] and `name` equals one of the
+ * `const val` entries below. If you rename a method in `Reflect.java`, update this object so scanning and generated
+ * bridges stay aligned.
  *
- * Obtaining a [me.stringdotjar.reflectaot.ReflectMethodId] uses the bytecode name **method**
- * (`Reflect.method(Class, …)`), not `methodId`.
+ * Obtaining a [me.stringdotjar.reflectaot.ReflectMethodId] uses the bytecode name [METHOD] (`Reflect.method(Class, ...)`),
+ * not `methodId`.
  */
 object ReflectApiNames {
 
@@ -79,7 +79,7 @@ object ReflectApiNames {
  */
 object ReflectClasspathScanDefaults {
 
-  /** Dotted prefixes applied after converting internal names (`/` → `.`); merged with user excludes before [ReflectUsageScanner.scanClasspath]. */
+  /** Dotted prefixes applied after converting internal names from slashes to dots. Merged with user excludes before [ReflectUsageScanner.scanClasspath]. */
   val PACKAGE_PREFIX_EXCLUDES: List<String> =
     listOf(
       "java.",

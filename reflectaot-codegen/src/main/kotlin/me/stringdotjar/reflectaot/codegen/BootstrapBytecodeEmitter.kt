@@ -8,7 +8,7 @@ import org.objectweb.asm.commons.GeneratorAdapter
 import org.objectweb.asm.commons.Method
 
 /**
- * Emits `ReflectAOTBootstrap`: loads before user code via `Reflect`’s static initializer and pushes
+ * Emits `ReflectAOTBootstrap`, which loads before user code via the static initializer on `Reflect` and registers
  * [MethodIdTableBytecodeEmitter.TABLE_INTERNAL] plus the registry into [me.stringdotjar.reflectaot.ReflectAOTServices].
  */
 object BootstrapBytecodeEmitter {
@@ -22,7 +22,11 @@ object BootstrapBytecodeEmitter {
   private val INSTALL = Method("install", Type.VOID_TYPE, arrayOf(RUNTIME_TYPE))
   private val INSTALL_METHOD_IDS = Method("installMethodIds", Type.VOID_TYPE, arrayOf(METHOD_ID_RESOLVER_TYPE))
 
-  /** Writes `ReflectAOTBootstrap.class`. */
+  /**
+   * Writes `ReflectAOTBootstrap.class` under the generated package directory rooted at [outputDir].
+   *
+   * @param outputDir Root directory that will receive the `me/stringdotjar/reflectaot/generated` tree.
+   */
   fun emit(outputDir: File) {
     outputDir.mkdirs()
     val cw = ClassWriter(ClassWriter.COMPUTE_FRAMES)

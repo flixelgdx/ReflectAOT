@@ -9,12 +9,12 @@ import java.io.File
 import org.objectweb.asm.commons.Method as AsmMethod
 
 /**
- * Emits [TABLE_INTERNAL]: static `ReflectMethodId` constants plus `resolve` bridges installed via
- * [me.stringdotjar.reflectaot.ReflectAOTServices.installMethodIds].
+ * Emits bytecode for `ReflectAOTMethodIdTable`, the class that owns static `ReflectMethodId` constants and `resolve`
+ * bridges installed through `ReflectAOTServices.installMethodIds` in the runtime module.
  */
 object MethodIdTableBytecodeEmitter {
 
-  /** Internal name of the generated resolver class. */
+  /** Internal JVM name of the generated resolver class under the `me.stringdotjar.reflectaot.generated` package. */
   const val TABLE_INTERNAL = "me/stringdotjar/reflectaot/generated/ReflectAOTMethodIdTable"
 
   private val OBJECT_TYPE = Type.getType(Object::class.java)
@@ -29,7 +29,12 @@ object MethodIdTableBytecodeEmitter {
   private val M_RESOLVE = AsmMethod("resolve", METHOD_ID_TYPE, arrayOf(CLASS_TYPE, STRING_TYPE, STRING_TYPE))
   private val M_RESOLVE_CLASS_NAME = AsmMethod("resolve", METHOD_ID_TYPE, arrayOf(CLASS_TYPE, STRING_TYPE))
 
-  /** Writes the table class under [outputDir] using one static field per binding id. */
+  /**
+   * Writes the resolver class under [outputDir], emitting one static field per binding id.
+   *
+   * @param outputDir Root directory that will receive the `me/stringdotjar/reflectaot/generated` tree.
+   * @param bindings Stable bindings after overload resolution and validation.
+   */
   fun emit(outputDir: File, bindings: List<MethodIdBinding>) {
     val cw = ClassWriter(ClassWriter.COMPUTE_FRAMES)
     cw.visit(
@@ -122,11 +127,19 @@ object MethodIdTableBytecodeEmitter {
     out.writeBytes(cw.toByteArray())
   }
 
+  /**
+   * Returns the JVM field name used for a static `ReflectMethodId` field in the generated table class.
+   *
+   * @param id Numeric binding id.
+   * @return Field name of the form `M` followed by the decimal id.
+   */
   private fun fieldName(id: Int): String = "M$id"
 
   /**
-   * `resolve(Class, String)`: unique binding wins; zero matches → unknown; two matches → ambiguous
-   * (different overloads share the name — caller must use the three-arg `Reflect.method` overload).
+   * Emits bytecode for `resolve(Class, String)` that counts matches across bindings and fails when ambiguous.
+   *
+   * @param cw Class writer for the table class under construction.
+   * @param sorted Bindings sorted by id for deterministic bytecode layout.
    */
   private fun emitResolveClassAndNameOnly(cw: ClassWriter, sorted: List<MethodIdBinding>) {
     val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC, M_RESOLVE_CLASS_NAME, null, null, cw)
