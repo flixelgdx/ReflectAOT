@@ -239,7 +239,7 @@ object ReflectUsageScanner {
           return null
         }
         val p = insnIndexAboveInvoke(insns, invokeIndex)
-        memberNameConstantString(method, insns, p)
+        memberNameConstantString(insns, p)
       }
       ReflectApiNames.SET_FIELD, ReflectApiNames.SET_PROPERTY -> {
         if (argCount != 3) {
@@ -252,7 +252,7 @@ object ReflectUsageScanner {
           return null
         }
         p = skipNonInstructionsBackward(insns, p)
-        memberNameConstantString(method, insns, p)
+        memberNameConstantString(insns, p)
       }
       else -> null
     }
@@ -268,9 +268,9 @@ object ReflectUsageScanner {
    */
   private fun extractMethodIdThreeArgs(method: MethodNode, insns: Array<AbstractInsnNode>, invokeIndex: Int): MethodIdCallSite {
     var p = insnIndexAboveInvoke(insns, invokeIndex)
-    val desc = memberNameConstantString(method, insns, p) ?: return invalidMethodIdSite()
+    val desc = memberNameConstantString(insns, p) ?: return invalidMethodIdSite()
     p = moveToPreviousOperandStart(insns, p)
-    val name = memberNameConstantString(method, insns, p) ?: return invalidMethodIdSite()
+    val name = memberNameConstantString(insns, p) ?: return invalidMethodIdSite()
     p = moveToPreviousOperandStart(insns, p)
     val owner = memberClassLiteral(method, insns, p) ?: return invalidMethodIdSite()
     return MethodIdCallSite(owner, name, desc)
@@ -286,7 +286,7 @@ object ReflectUsageScanner {
    */
   private fun extractMethodIdTwoArgs(method: MethodNode, insns: Array<AbstractInsnNode>, invokeIndex: Int): MethodIdCallSite {
     var p = insnIndexAboveInvoke(insns, invokeIndex)
-    val name = memberNameConstantString(method, insns, p) ?: return invalidMethodIdSite()
+    val name = memberNameConstantString(insns, p) ?: return invalidMethodIdSite()
     p = moveToPreviousOperandStart(insns, p)
     val owner = memberClassLiteral(method, insns, p) ?: return invalidMethodIdSite()
     return MethodIdCallSite(owner, name, null)
@@ -351,13 +351,11 @@ object ReflectUsageScanner {
   /**
    * Resolves a compile-time string used as a field or property member name, or as a `Reflect.method` name or descriptor operand.
    *
-   * @param _method The enclosing method (reserved for future local variable table use).
    * @param insns Instruction array for that method.
    * @param nameExprEndIndex Index of the last instruction that contributes the string value on the operand stack.
    * @return The constant string when the operand is an `ldc` string or a supported same-method local chain, otherwise null.
    */
   private fun memberNameConstantString(
-    _method: MethodNode,
     insns: Array<AbstractInsnNode>,
     nameExprEndIndex: Int,
   ): String? {
@@ -584,7 +582,7 @@ object ReflectUsageScanner {
           return null
         }
         p = skipNonInstructionsBackward(insns, p)
-        if (memberNameConstantString(containingMethod, insns, p) == null) {
+        if (memberNameConstantString(insns, p) == null) {
           return null
         }
         p = stripOneExpressionBackward(insns, p)
@@ -593,7 +591,7 @@ object ReflectUsageScanner {
         }
       }
       2 -> {
-        if (memberNameConstantString(containingMethod, insns, p) == null) {
+        if (memberNameConstantString(insns, p) == null) {
           return null
         }
         p = stripOneExpressionBackward(insns, p)
@@ -693,7 +691,7 @@ object ReflectUsageScanner {
   }
 
   /**
-   * Steps backward across one JVM stack operand so later logic can read the previous operand toward the start of the method.
+   * Steps backward across one JVM stack operand, so later logic can read the previous operand toward the start of the method.
    *
    * Recognizes constants, local loads, simple field read tails, common boxed numeric tails, and `new` plus `invokespecial` shapes.
    *

@@ -17,11 +17,11 @@ object MethodIdTableBytecodeEmitter {
   /** Internal JVM name of the generated resolver class under the `me.stringdotjar.reflectaot.generated` package. */
   const val TABLE_INTERNAL = "me/stringdotjar/reflectaot/generated/ReflectAOTMethodIdTable"
 
-  private val OBJECT_TYPE = Type.getType(Object::class.java)
+  private val OBJECT_TYPE = Type.getType(Any::class.java)
   private val STRING_TYPE = Type.getType(String::class.java)
   private val CLASS_TYPE = Type.getType(Class::class.java)
   private val METHOD_ID_TYPE = Type.getType("Lme/stringdotjar/reflectaot/ReflectMethodId;")
-  private val RESOLVER_INTERNAL = "me/stringdotjar/reflectaot/ReflectAOTMethodIdResolver"
+  private const val RESOLVER_INTERNAL = "me/stringdotjar/reflectaot/ReflectAOTMethodIdResolver"
   private val TABLE_TYPE = Type.getObjectType(TABLE_INTERNAL)
 
   private val M_INIT = Method.getMethod("void <init> ()")

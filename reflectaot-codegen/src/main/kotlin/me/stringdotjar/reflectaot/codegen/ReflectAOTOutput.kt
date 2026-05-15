@@ -17,7 +17,7 @@ enum class ReflectAOTOutput {
 
   /**
    * Emit bytecode and Java mirrors from the same model. Java bootstrap emission is skipped when bytecode already
-   * installs services so initialization stays single-sourced.
+   * installs services, so initialization stays single-sourced.
    */
   BOTH
 }

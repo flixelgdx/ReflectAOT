@@ -9,7 +9,7 @@ import org.objectweb.asm.commons.Method
 
 /**
  * Emits `ReflectAOTBootstrap`, which loads before user code via the static initializer on `Reflect` and registers
- * [MethodIdTableBytecodeEmitter.TABLE_INTERNAL] plus the registry into [me.stringdotjar.reflectaot.ReflectAOTServices].
+ * [MethodIdTableBytecodeEmitter.TABLE_INTERNAL] plus the registry into `ReflectAOTServices`.
  */
 object BootstrapBytecodeEmitter {
 

@@ -76,13 +76,7 @@ object AccessBytecodeEmitter {
 
   private fun emitField(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
     val m = AsmMethod(ReflectApiNames.FIELD, Type.getType(Object::class.java), arrayOf(ownerType, STRING_TYPE))
-    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
-    ga.visitCode()
-    ga.loadArg(1)
-    val nonNull = ga.newLabel()
-    ga.ifNonNull(nonNull)
-    ga.throwException(Type.getType(NullPointerException::class.java), "name")
-    ga.mark(nonNull)
+    val ga = verifyNonNull(m, cw)
 
     for ((name, desc) in type.fields) {
       stringEqualsThen(
@@ -102,27 +96,20 @@ object AccessBytecodeEmitter {
 
   private fun emitSetField(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
     val m = AsmMethod(ReflectApiNames.SET_FIELD, Type.VOID_TYPE, arrayOf(ownerType, STRING_TYPE, OBJECT_TYPE))
-    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
-    ga.visitCode()
-    ga.loadArg(1)
-    val nonNull = ga.newLabel()
-    ga.ifNonNull(nonNull)
-    ga.throwException(Type.getType(NullPointerException::class.java), "name")
-    ga.mark(nonNull)
+    val ga = verifyNonNull(m, cw)
 
     for ((name, desc) in type.fieldsWritable) {
       val ft = Type.getType(desc)
       stringEqualsThen(
         ga,
         name,
-        {
-          ga.loadArg(0)
-          ga.loadArg(2)
-          ga.unbox(ft)
-          ga.putField(ownerType, name, ft)
-          ga.returnValue()
-        },
-      )
+      ) {
+        ga.loadArg(0)
+        ga.loadArg(2)
+        ga.unbox(ft)
+        ga.putField(ownerType, name, ft)
+        ga.returnValue()
+      }
     }
     ga.throwException(Type.getType(IllegalArgumentException::class.java), "Unknown field")
     ga.endMethod()
@@ -161,13 +148,7 @@ object AccessBytecodeEmitter {
 
   private fun emitProperty(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
     val m = AsmMethod(ReflectApiNames.PROPERTY, Type.getType(Object::class.java), arrayOf(ownerType, STRING_TYPE))
-    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
-    ga.visitCode()
-    ga.loadArg(1)
-    val nonNull = ga.newLabel()
-    ga.ifNonNull(nonNull)
-    ga.throwException(Type.getType(NullPointerException::class.java), "name")
-    ga.mark(nonNull)
+    val ga = verifyNonNull(m, cw)
 
     for (p in type.properties) {
       if (!ReflectPropertyAnalysis.beanReadable(p, type)) {
@@ -210,13 +191,7 @@ object AccessBytecodeEmitter {
 
   private fun emitSetProperty(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
     val m = AsmMethod(ReflectApiNames.SET_PROPERTY, Type.VOID_TYPE, arrayOf(ownerType, STRING_TYPE, OBJECT_TYPE))
-    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
-    ga.visitCode()
-    ga.loadArg(1)
-    val nonNull = ga.newLabel()
-    ga.ifNonNull(nonNull)
-    ga.throwException(Type.getType(NullPointerException::class.java), "name")
-    ga.mark(nonNull)
+    val ga = verifyNonNull(m, cw)
 
     for (p in type.properties) {
       if (!ReflectPropertyAnalysis.beanWritableForEmit(p, type)) {
@@ -378,5 +353,16 @@ object AccessBytecodeEmitter {
     ga.ifZCmp(GeneratorAdapter.EQ, next)
     thenBlock()
     ga.mark(next)
+  }
+
+  private fun verifyNonNull(m: Method, cw: ClassWriter) : GeneratorAdapter {
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
+    ga.visitCode()
+    ga.loadArg(1)
+    val nonNull = ga.newLabel()
+    ga.ifNonNull(nonNull)
+    ga.throwException(Type.getType(NullPointerException::class.java), "name")
+    ga.mark(nonNull)
+    return ga
   }
 }
