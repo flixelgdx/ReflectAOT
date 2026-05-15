@@ -27,7 +27,7 @@ import java.io.File
  *
  * @property reflectMethod JVM name on [ReflectApiNames], for example `"field"` or `"callMethod"`.
  * @property receiverInternalOrNull Receiver type internal name when inferred, or null if erased to `java/lang/Object`.
- * @property nameLiteralOrNull Extracted member name string constant when applicable, otherwise null (for example [ReflectApiNames.CALL_METHOD]).
+ * @property nameLiteralOrNull Member name when resolved from a string `ldc` or a same-method `String` local bound to a supported constant chain; otherwise null (for example [ReflectApiNames.CALL_METHOD]).
  */
 data class ReflectCallSite(
   val reflectMethod: String,
@@ -197,7 +197,7 @@ object ReflectUsageScanner {
         if (insn.name == ReflectApiNames.CALL_METHOD || insn.name == ReflectApiNames.FIELDS) {
           null
         } else {
-          extractNameLiteral(insn, i, insns)
+          extractNameLiteral(method, insn, i, insns)
         }
       reflectHits.add(
         ReflectCallSite(
@@ -211,14 +211,18 @@ object ReflectUsageScanner {
   }
 
   /**
-   * Reads the string literal used as the member name for two-argument field/property helpers, or for the value slot of setters (after stripping the assigned expression).
+   * Reads the member name for two-argument field/property helpers, or for the name slot of three-argument setters
+   * after stripping the assigned value expression.
    *
-   * @param reflectCall The `Reflect` invocation instruction.
-   * @param invokeIndex Index of that instruction in [insns].
-   * @param insns Instruction array for the enclosing method.
-   * @return The string constant when recognized, or null.
+   * Accepts a string `ldc` or an `aload` of a local previously assigned from another supported name expression
+   * in the same method (see [memberNameConstantString]).
    */
-  private fun extractNameLiteral(reflectCall: MethodInsnNode, invokeIndex: Int, insns: Array<AbstractInsnNode>): String? {
+  private fun extractNameLiteral(
+    method: MethodNode,
+    reflectCall: MethodInsnNode,
+    invokeIndex: Int,
+    insns: Array<AbstractInsnNode>,
+  ): String? {
     val argCount = Type.getArgumentTypes(reflectCall.desc).size
     return when (reflectCall.name) {
       ReflectApiNames.FIELD, ReflectApiNames.PROPERTY, ReflectApiNames.HAS_FIELD -> {
@@ -226,7 +230,7 @@ object ReflectUsageScanner {
           return null
         }
         val p = insnIndexAboveInvoke(insns, invokeIndex)
-        ldcStringAt(insns, p)
+        memberNameConstantString(method, insns, p)
       }
       ReflectApiNames.SET_FIELD, ReflectApiNames.SET_PROPERTY -> {
         if (argCount != 3) {
@@ -239,7 +243,7 @@ object ReflectUsageScanner {
           return null
         }
         p = skipNonInstructionsBackward(insns, p)
-        ldcStringAt(insns, p)
+        memberNameConstantString(method, insns, p)
       }
       else -> null
     }
@@ -318,6 +322,84 @@ object ReflectUsageScanner {
     }
   }
 
+  /** JVM local slot written by a normal [Opcodes.ASTORE] on [VarInsnNode], or null. Wide stores are not handled. */
+  private fun aStoreVarSlot(insn: AbstractInsnNode): Int? =
+    if (insn is VarInsnNode && insn.opcode == Opcodes.ASTORE) {
+      insn.`var`
+    } else {
+      null
+    }
+
+  /**
+   * Resolves the member-name string pushed for `Reflect.field` / `setField` / `property` / `setProperty` / `hasField`.
+   *
+   * Returns the [String] when the name expression is a string `ldc`, or an `aload` of a local that was assigned
+   * from another such expression earlier in the same method (linear backward scan to the matching `astore`).
+   */
+  private fun memberNameConstantString(
+    _method: MethodNode,
+    insns: Array<AbstractInsnNode>,
+    nameExprEndIndex: Int,
+  ): String? {
+    val visitingSlots = mutableSetOf<Int>()
+    return expressionStringConstant(insns, nameExprEndIndex, 0, visitingSlots)
+  }
+
+  private fun expressionStringConstant(
+    insns: Array<AbstractInsnNode>,
+    exprEndIndex: Int,
+    depth: Int,
+    visitingSlots: MutableSet<Int>,
+  ): String? {
+    if (depth > 32) {
+      return null
+    }
+    val p = skipNonInstructionsBackward(insns, exprEndIndex)
+    if (p < 0) {
+      return null
+    }
+    val insn = insns[p]
+    return when {
+      insn is LdcInsnNode && insn.cst is String ->
+        insn.cst as String
+      insn is VarInsnNode && insn.opcode == Opcodes.ALOAD ->
+        localStringConstantBoundBeforeRead(insns, insn.`var`, p, depth + 1, visitingSlots)
+      else -> null
+    }
+  }
+
+  private fun localStringConstantBoundBeforeRead(
+    insns: Array<AbstractInsnNode>,
+    slot: Int,
+    readInsnIndex: Int,
+    depth: Int,
+    visitingSlots: MutableSet<Int>,
+  ): String? {
+    if (depth > 32) {
+      return null
+    }
+    if (!visitingSlots.add(slot)) {
+      return null
+    }
+    try {
+      var i = readInsnIndex - 1
+      while (i >= 0) {
+        i = skipNonInstructionsBackward(insns, i)
+        if (i < 0) {
+          return null
+        }
+        val insn = insns[i]
+        if (aStoreVarSlot(insn) == slot) {
+          return expressionStringConstant(insns, i - 1, depth + 1, visitingSlots)
+        }
+        i--
+      }
+      return null
+    } finally {
+      visitingSlots.remove(slot)
+    }
+  }
+
   /**
    * Resolves a [Type] LDC representing a reference or array class literal to an internal name.
    *
@@ -338,14 +420,9 @@ object ReflectUsageScanner {
    * Recovers a concrete receiver type when the verifier merged the receiver slot to `java/lang/Object`.
    *
    * Mirrors [extractNameLiteral] stack stripping for three-argument setters so complex third operands
-   * (constructors, boxed numerics, etc.) do not hide the member-name [LdcInsnNode]. Also resolves
-   * [ALOAD] via [MethodNode.localVariables] and [CHECKCAST] when present.
-   *
-   * @param insns Instruction array.
-   * @param invokeIndex Index of the `Reflect` call.
-   * @param reflectCall That call’s instruction node (used for arity).
-   * @param containingMethod Enclosing method (local variable table for [ALOAD] receivers).
-   * @return A reference internal name when recognized, or null.
+   * (constructors, boxed numerics, etc.) do not hide the member name. The name operand may be `ldc` or a traced
+   * local (see [memberNameConstantString]). Also resolves [Opcodes.ALOAD] via [MethodNode.localVariables]
+   * and [Opcodes.CHECKCAST] when present.
    */
   private fun refineReceiverFromPrecedingBytecode(
     insns: Array<AbstractInsnNode>,
@@ -369,16 +446,21 @@ object ReflectUsageScanner {
           return null
         }
         p = skipNonInstructionsBackward(insns, p)
-        val two = insns.getOrNull(p)
-        if (two !is LdcInsnNode || two.cst !is String) {
+        if (memberNameConstantString(containingMethod, insns, p) == null) {
           return null
         }
-        p--
+        p = stripOneExpressionBackward(insns, p)
+        if (p < 0) {
+          return null
+        }
       }
       2 -> {
-        val two = insns.getOrNull(p)
-        if (two is LdcInsnNode && two.cst is String) {
-          p--
+        if (memberNameConstantString(containingMethod, insns, p) == null) {
+          return null
+        }
+        p = stripOneExpressionBackward(insns, p)
+        if (p < 0) {
+          return null
         }
       }
       1 -> {}
@@ -571,7 +653,7 @@ object ReflectUsageScanner {
   }
 
   /**
-   * Strips `new T(args…)` / `new T()` so [extractNameLiteral] can find the member string under the value expression.
+   * Strips `new T(args…)` / `new T()` so the member-name operand can be read under the value expression.
    *
    * Expects javac-shaped `NEW`, `DUP`, …, `INVOKESPECIAL <init>`.
    */

@@ -23,6 +23,7 @@ dependencies {
  api 'org.ow2.asm:asm-tree:9.8'
  api 'org.ow2.asm:asm-analysis:9.8'
 
+ testImplementation project(':reflectaot-runtime')
  testImplementation 'org.jetbrains.kotlin:kotlin-test'
  testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5'
  testImplementation platform('org.junit:junit-bom:5.11.4')

@@ -204,6 +204,10 @@ public final class Reflect {
    * <p>Implementations should resolve inherited fields and may allow non-public access depending on
    * platform constraints. If the field cannot be resolved or read, an exception should be thrown.
    *
+   * <p>When ReflectAOT is enabled, literal member names and {@code String} locals assigned from a
+   * string literal in the same method are validated at build time. Method parameters and other
+   * dynamic names are not supported for that validation.
+   *
    * @param o receiver object
    * @param field field name to read
    * @return the current field value boxed as needed

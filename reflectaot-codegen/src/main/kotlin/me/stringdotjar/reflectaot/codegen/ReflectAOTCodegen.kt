@@ -51,9 +51,10 @@ object ReflectAOTCodegen {
       val sample =
         unresolvedMemberNameLiterals.take(5).joinToString { "${it.reflectMethod}(…)" }
       throw IllegalStateException(
-        "ReflectAOT: member name must be a compile-time string literal for Reflect.field, setField, property, setProperty, and hasField " +
+        "ReflectAOT: member name must be a string literal or a String local assigned from a supported constant " +
+          "expression in the same method for Reflect.field, setField, property, setProperty, and hasField " +
           "so the build can validate names ($sample). " +
-          "Variables, concatenation, and non-constant expressions are not supported.",
+          "Method parameters, string concatenation, and other non-constant forms are not supported.",
       )
     }
 
