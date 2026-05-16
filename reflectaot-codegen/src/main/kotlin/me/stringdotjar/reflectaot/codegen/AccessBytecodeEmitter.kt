@@ -18,6 +18,10 @@ object AccessBytecodeEmitter {
   private val STRING_TYPE = Type.getType(String::class.java)
   private val STRING_ARRAY_TYPE = Type.getType("[Ljava/lang/String;")
   private val LIST_TYPE = Type.getType(List::class.java)
+  private val BICONSUMER_TYPE = Type.getType(java.util.function.BiConsumer::class.java)
+  private val METHOD_ID_TYPE = Type.getType("Lme/stringdotjar/reflectaot/ReflectMethodId;")
+  private val M_REFLECT_METHOD_ID_INIT = AsmMethod("<init>", Type.VOID_TYPE, arrayOf(Type.INT_TYPE))
+  private val M_BICONS_ACCEPT = AsmMethod("accept", Type.VOID_TYPE, arrayOf(OBJECT_TYPE, OBJECT_TYPE))
 
   /**
    * Returns the stable internal name for the accessor class that specializes calls for [typeInternal].
@@ -65,8 +69,11 @@ object AccessBytecodeEmitter {
     emitProperty(type, cw, ownerType)
     emitSetProperty(type, cw, ownerType)
     emitFields(type, cw, ownerType)
+    emitForEachField(type, cw, ownerType)
+    emitForEachProperty(type, cw, ownerType)
     emitCopy(type, cw, ownerType, roots)
     emitCallMethod(type, cw, ownerType, methodBindings, roots)
+    emitForEachMethod(type, cw, methodBindings)
 
     cw.visitEnd()
     val out = File(outputDir, "$accessInternal.class")
@@ -333,6 +340,110 @@ object AccessBytecodeEmitter {
       ga.push(i)
       ga.push(nameList[i])
       ga.arrayStore(STRING_TYPE)
+    }
+    ga.returnValue()
+    ga.endMethod()
+  }
+
+  private fun forEachPropertyNameOrder(type: TypeIntrospection.IntrospectedType): List<String> {
+    val ordered = ArrayList<String>()
+    val seen = HashSet<String>()
+    for (p in type.properties) {
+      if (!ReflectPropertyAnalysis.beanReadable(p, type)) {
+        continue
+      }
+      if (seen.add(p.name)) {
+        ordered.add(p.name)
+      }
+    }
+    for ((name, _) in type.fields) {
+      if (seen.add(name)) {
+        ordered.add(name)
+      }
+    }
+    return ordered
+  }
+
+  private fun emitForEachField(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
+    val m = AsmMethod(ReflectApiNames.FOR_EACH_FIELD, Type.VOID_TYPE, arrayOf(ownerType, BICONSUMER_TYPE))
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
+    ga.visitCode()
+    ga.loadArg(1)
+    val nonNullConsumer = ga.newLabel()
+    ga.ifNonNull(nonNullConsumer)
+    ga.throwException(Type.getType(NullPointerException::class.java), "consumer")
+    ga.mark(nonNullConsumer)
+    for ((name, desc) in type.fields) {
+      ga.loadArg(1)
+      ga.push(name)
+      ga.loadArg(0)
+      val ft = Type.getType(desc)
+      ga.getField(ownerType, name, ft)
+      ga.box(ft)
+      ga.invokeInterface(BICONSUMER_TYPE, M_BICONS_ACCEPT)
+    }
+    ga.returnValue()
+    ga.endMethod()
+  }
+
+  private fun emitForEachProperty(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, ownerType: Type) {
+    val m = AsmMethod(ReflectApiNames.FOR_EACH_PROPERTY, Type.VOID_TYPE, arrayOf(ownerType, BICONSUMER_TYPE))
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
+    ga.visitCode()
+    ga.loadArg(1)
+    val nonNullConsumer = ga.newLabel()
+    ga.ifNonNull(nonNullConsumer)
+    ga.throwException(Type.getType(NullPointerException::class.java), "consumer")
+    ga.mark(nonNullConsumer)
+    for (name in forEachPropertyNameOrder(type)) {
+      ga.loadArg(1)
+      ga.push(name)
+      ga.loadArg(0)
+      val pbean = type.properties.firstOrNull { it.name == name && ReflectPropertyAnalysis.beanReadable(it, type) }
+      if (pbean != null) {
+        if (pbean.getterName != null && pbean.getterDesc != null) {
+          val rt = Type.getReturnType(pbean.getterDesc)
+          ga.invokeVirtual(ownerType, AsmMethod(pbean.getterName, pbean.getterDesc))
+          ga.box(rt)
+        } else if (pbean.fieldName != null && type.fields.containsKey(pbean.fieldName)) {
+          val fd = type.fields[pbean.fieldName]!!
+          ga.getField(ownerType, pbean.fieldName, Type.getType(fd))
+          ga.box(Type.getType(fd))
+        } else {
+          continue
+        }
+      } else {
+        val desc = type.fields[name] ?: continue
+        ga.getField(ownerType, name, Type.getType(desc))
+        ga.box(Type.getType(desc))
+      }
+      ga.invokeInterface(BICONSUMER_TYPE, M_BICONS_ACCEPT)
+    }
+    ga.returnValue()
+    ga.endMethod()
+  }
+
+  private fun emitForEachMethod(type: TypeIntrospection.IntrospectedType, cw: ClassWriter, methodBindings: List<MethodIdBinding>) {
+    val m = AsmMethod(ReflectApiNames.FOR_EACH_METHOD, Type.VOID_TYPE, arrayOf(BICONSUMER_TYPE))
+    val ga = GeneratorAdapter(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, m, null, null, cw)
+    ga.visitCode()
+    ga.loadArg(0)
+    val nonNullConsumer = ga.newLabel()
+    ga.ifNonNull(nonNullConsumer)
+    ga.throwException(Type.getType(NullPointerException::class.java), "consumer")
+    ga.mark(nonNullConsumer)
+    val bindings =
+      methodBindings
+        .filter { it.userClassInternal == type.internalName }
+        .sortedWith(compareBy({ it.name }, { it.descriptor }))
+    for (b in bindings) {
+      ga.loadArg(0)
+      ga.push(b.name)
+      ga.newInstance(METHOD_ID_TYPE)
+      ga.dup()
+      ga.push(b.id)
+      ga.invokeConstructor(METHOD_ID_TYPE, M_REFLECT_METHOD_ID_INIT)
+      ga.invokeInterface(BICONSUMER_TYPE, M_BICONS_ACCEPT)
     }
     ga.returnValue()
     ga.endMethod()

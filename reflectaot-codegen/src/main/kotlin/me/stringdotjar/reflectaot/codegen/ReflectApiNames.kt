@@ -33,6 +33,24 @@ object ReflectApiNames {
   /** Matches `Reflect.fields`. */
   const val FIELDS = "fields"
 
+  /** Matches `Reflect.forEachField`. */
+  const val FOR_EACH_FIELD = "forEachField"
+
+  /** Matches `Reflect.forEachProperty`. */
+  const val FOR_EACH_PROPERTY = "forEachProperty"
+
+  /** Matches `Reflect.forEachMethod`. */
+  const val FOR_EACH_METHOD = "forEachMethod"
+
+  /** JVM descriptor for `Reflect.forEachField(Object, BiConsumer)`. */
+  const val FOR_EACH_FIELD_DESCRIPTOR = "(Ljava/lang/Object;Ljava/util/function/BiConsumer;)V"
+
+  /** JVM descriptor for `Reflect.forEachProperty(Object, BiConsumer)`. */
+  const val FOR_EACH_PROPERTY_DESCRIPTOR = "(Ljava/lang/Object;Ljava/util/function/BiConsumer;)V"
+
+  /** JVM descriptor for `Reflect.forEachMethod(Class, BiConsumer)`. */
+  const val FOR_EACH_METHOD_DESCRIPTOR = "(Ljava/lang/Class;Ljava/util/function/BiConsumer;)V"
+
   /** Matches `Reflect.callMethod`. */
   const val CALL_METHOD = "callMethod"
 
@@ -48,7 +66,18 @@ object ReflectApiNames {
    * Used by [ReflectAOTCodegen] when validating [ReflectCallSite] entries.
    */
   val NEEDS_CONCRETE_RECEIVER: Set<String> =
-    setOf(FIELD, SET_FIELD, PROPERTY, SET_PROPERTY, HAS_FIELD, FIELDS, METHOD)
+    setOf(
+      FIELD,
+      SET_FIELD,
+      PROPERTY,
+      SET_PROPERTY,
+      HAS_FIELD,
+      FIELDS,
+      METHOD,
+      FOR_EACH_FIELD,
+      FOR_EACH_PROPERTY,
+      FOR_EACH_METHOD,
+    )
 
   /**
    * APIs whose member name must be a string **constant** in bytecode so codegen can validate it.

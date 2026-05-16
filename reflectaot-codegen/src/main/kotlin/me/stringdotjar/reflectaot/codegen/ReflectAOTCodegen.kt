@@ -326,7 +326,7 @@ object ReflectAOTCodegen {
     for (t in types) {
       AccessBytecodeEmitter.emit(t, bytecodeOutputDir, roots, methodBindings)
     }
-    RegistryBytecodeEmitter.emit(types, bytecodeOutputDir)
+    RegistryBytecodeEmitter.emit(types, bytecodeOutputDir, methodBindings)
     MethodIdTableBytecodeEmitter.emit(bytecodeOutputDir, methodBindings)
     BootstrapBytecodeEmitter.emit(bytecodeOutputDir)
   }

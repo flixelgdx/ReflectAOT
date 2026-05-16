@@ -171,11 +171,31 @@ object ReflectUsageScanner {
       if (insn.name !in ReflectApiNames.SCANNED_STATIC_NAMES) {
         continue
       }
+      if (insn.name == ReflectApiNames.FOR_EACH_FIELD && insn.desc != ReflectApiNames.FOR_EACH_FIELD_DESCRIPTOR) {
+        continue
+      }
+      if (insn.name == ReflectApiNames.FOR_EACH_PROPERTY && insn.desc != ReflectApiNames.FOR_EACH_PROPERTY_DESCRIPTOR) {
+        continue
+      }
+      if (insn.name == ReflectApiNames.FOR_EACH_METHOD && insn.desc != ReflectApiNames.FOR_EACH_METHOD_DESCRIPTOR) {
+        continue
+      }
       if (insn.name == ReflectApiNames.METHOD) {
         when (insn.desc) {
           ReflectApiNames.METHOD_DESCRIPTOR_3_ARGS -> methodIdHits.add(extractMethodIdThreeArgs(method, insns, i))
           ReflectApiNames.METHOD_DESCRIPTOR_2_ARGS -> methodIdHits.add(extractMethodIdTwoArgs(method, insns, i))
         }
+        continue
+      }
+      if (insn.name == ReflectApiNames.FOR_EACH_METHOD && insn.desc == ReflectApiNames.FOR_EACH_METHOD_DESCRIPTOR) {
+        val owner = extractForEachMethodClassOperand(method, insns, i) ?: continue
+        reflectHits.add(
+          ReflectCallSite(
+            reflectMethod = ReflectApiNames.FOR_EACH_METHOD,
+            receiverInternalOrNull = owner,
+            nameLiteralOrNull = null,
+          ),
+        )
         continue
       }
       val frame = frames[i] ?: continue
@@ -203,7 +223,11 @@ object ReflectUsageScanner {
         }
       val receiverOrNull = if (receiver == "java/lang/Object") null else receiver
       val nameLit =
-        if (insn.name == ReflectApiNames.CALL_METHOD || insn.name == ReflectApiNames.FIELDS) {
+        if (insn.name == ReflectApiNames.CALL_METHOD ||
+          insn.name == ReflectApiNames.FIELDS ||
+          insn.name == ReflectApiNames.FOR_EACH_FIELD ||
+          insn.name == ReflectApiNames.FOR_EACH_PROPERTY
+        ) {
           null
         } else {
           extractNameLiteral(method, insn, i, insns)
@@ -290,6 +314,23 @@ object ReflectUsageScanner {
     p = moveToPreviousOperandStart(insns, p)
     val owner = memberClassLiteral(method, insns, p) ?: return invalidMethodIdSite()
     return MethodIdCallSite(owner, name, null)
+  }
+
+  /**
+   * Parses the `Class` operand for `Reflect.forEachMethod(Class, BiConsumer)` (stack order: class under consumer).
+   *
+   * @param method The enclosing method (used for local tracing on the class operand).
+   * @param insns Instruction array for that method.
+   * @param invokeIndex Index of the `invokestatic` for `Reflect.forEachMethod`.
+   * @return JVM internal name for the class operand, or null when not resolved.
+   */
+  private fun extractForEachMethodClassOperand(method: MethodNode, insns: Array<AbstractInsnNode>, invokeIndex: Int): String? {
+    var p = insnIndexAboveInvoke(insns, invokeIndex)
+    p = stripOneExpressionBackward(insns, p)
+    if (p < 0) {
+      return null
+    }
+    return memberClassLiteral(method, insns, p)
   }
 
   /**
@@ -589,12 +630,22 @@ object ReflectUsageScanner {
         }
       }
       2 -> {
-        if (memberNameConstantString(insns, p) == null) {
-          return null
-        }
-        p = stripOneExpressionBackward(insns, p)
-        if (p < 0) {
-          return null
+        when (reflectCall.name) {
+          ReflectApiNames.FOR_EACH_FIELD, ReflectApiNames.FOR_EACH_PROPERTY -> {
+            p = stripOneExpressionBackward(insns, p)
+            if (p < 0) {
+              return null
+            }
+          }
+          else -> {
+            if (memberNameConstantString(insns, p) == null) {
+              return null
+            }
+            p = stripOneExpressionBackward(insns, p)
+            if (p < 0) {
+              return null
+            }
+          }
         }
       }
       1 -> {}

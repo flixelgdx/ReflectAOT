@@ -1,6 +1,7 @@
 package me.stringdotjar.reflectaot;
 
 import java.util.List;
+import java.util.function.BiConsumer;
 
 /**
  * Placeholder {@link ReflectAOTRuntime} installed by the initial generated bootstrap until
@@ -41,6 +42,21 @@ public final class ReflectAOTStubRuntime implements ReflectAOTRuntime {
   @Override
   public String[] fields(Object o) {
     return ReflectAOTDefaultDispatch.emptyStringArray();
+  }
+
+  @Override
+  public void forEachField(Object o, BiConsumer<String, Object> consumer) {
+    ReflectAOTDefaultDispatch.forEachField(o, consumer);
+  }
+
+  @Override
+  public void forEachProperty(Object o, BiConsumer<String, Object> consumer) {
+    ReflectAOTDefaultDispatch.forEachProperty(o, consumer);
+  }
+
+  @Override
+  public void forEachMethod(Class<?> clazz, BiConsumer<String, ReflectMethodId> consumer) {
+    ReflectAOTDefaultDispatch.forEachMethod(clazz, consumer);
   }
 
   @Override
@@ -86,8 +102,7 @@ public final class ReflectAOTStubRuntime implements ReflectAOTRuntime {
     return v != null
         && !(v instanceof Boolean
             || v instanceof Number
-            || v instanceof Character
-            || v instanceof String);
+            || v instanceof Character);
   }
 
   @Override

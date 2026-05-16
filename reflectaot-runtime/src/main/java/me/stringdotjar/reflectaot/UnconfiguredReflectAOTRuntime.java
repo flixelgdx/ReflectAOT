@@ -1,6 +1,7 @@
 package me.stringdotjar.reflectaot;
 
 import java.util.List;
+import java.util.function.BiConsumer;
 
 enum UnconfiguredReflectAOTRuntime implements ReflectAOTRuntime {
 
@@ -44,6 +45,21 @@ enum UnconfiguredReflectAOTRuntime implements ReflectAOTRuntime {
 
   @Override
   public String[] fields(Object o) {
+    throw nx();
+  }
+
+  @Override
+  public void forEachField(Object o, BiConsumer<String, Object> consumer) {
+    throw nx();
+  }
+
+  @Override
+  public void forEachProperty(Object o, BiConsumer<String, Object> consumer) {
+    throw nx();
+  }
+
+  @Override
+  public void forEachMethod(Class<?> clazz, BiConsumer<String, ReflectMethodId> consumer) {
     throw nx();
   }
 

@@ -3,6 +3,7 @@ package me.stringdotjar.reflectaot;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BiConsumer;
 
 /**
  * Class that provides a comprehensive runtime interface for reflection-like operations
@@ -76,8 +77,13 @@ import java.util.List;
  * // Check if a value is a function.
  * boolean isFunction = Reflect.isFunction(value);
  *
- * // Check if a value is an object.
+ * // Check if a value is an object (strings count as objects).
  * boolean isObject = Reflect.isObject(value);
+ *
+ * // Iterate known members (requires generated dispatch for the receiver or class token).
+ * Reflect.forEachField(o, consumer);
+ * Reflect.forEachProperty(o, consumer);
+ * Reflect.forEachMethod(Foo.class, consumer);
  *
  * // Write a field value directly.
  * Reflect.setField(o, "field", value);
@@ -230,6 +236,54 @@ public final class Reflect {
   public static String[] fields(Object o) {
     String[] r = ReflectAOTServices.runtime().fields(o);
     return r == null ? ReflectAOTDefaultDispatch.emptyStringArray() : r;
+  }
+
+  /**
+   * Invokes {@code consumer} once per public instance field on the receiver type, in stable declaration order (same
+   * members as {@link #field}).
+   *
+   * @param o receiver object
+   * @param consumer receives each field name and boxed value
+   * @throws NullPointerException when {@code consumer} is null
+   * @throws UnsupportedOperationException when the receiver type was not specialized at build time
+   */
+  public static void forEachField(Object o, BiConsumer<String, Object> consumer) {
+    if (consumer == null) {
+      throw new NullPointerException("consumer");
+    }
+    ReflectAOTServices.runtime().forEachField(o, consumer);
+  }
+
+  /**
+   * Invokes {@code consumer} once per readable property name (JavaBeans first, then public fields), matching {@link
+   * #property}.
+   *
+   * @param o receiver object
+   * @param consumer receives each property name and boxed value
+   * @throws NullPointerException when {@code consumer} is null
+   * @throws UnsupportedOperationException when the receiver type was not specialized at build time
+   */
+  public static void forEachProperty(Object o, BiConsumer<String, Object> consumer) {
+    if (consumer == null) {
+      throw new NullPointerException("consumer");
+    }
+    ReflectAOTServices.runtime().forEachProperty(o, consumer);
+  }
+
+  /**
+   * Invokes {@code consumer} once per build-resolved {@link Reflect#method(Class, String, String)} binding for {@code
+   * clazz} (including overloads of the same simple name).
+   *
+   * @param clazz class literal (must match the class token used with {@link Reflect#method(Class, String)})
+   * @param consumer receives each JVM method name and its {@link ReflectMethodId}
+   * @throws NullPointerException when {@code consumer} is null
+   * @throws UnsupportedOperationException when {@code clazz} was not specialized at build time
+   */
+  public static void forEachMethod(Class<?> clazz, BiConsumer<String, ReflectMethodId> consumer) {
+    if (consumer == null) {
+      throw new NullPointerException("consumer");
+    }
+    ReflectAOTServices.runtime().forEachMethod(clazz, consumer);
   }
 
   /**
@@ -401,8 +455,8 @@ public final class Reflect {
   /**
    * Returns whether a value should be treated as an object value in reflection contexts.
    *
-   * <p>This is useful for parity with dynamic reflection APIs and for differentiating scalar values
-   * from richer object structures.
+   * <p>Non-null strings and ordinary reference types return {@code true}. Boxed primitives ({@link Boolean}, {@link
+   * Number}, {@link Character}) return {@code false}.
    *
    * @param v value to test
    * @return {@code true} if the value is treated as an object value
