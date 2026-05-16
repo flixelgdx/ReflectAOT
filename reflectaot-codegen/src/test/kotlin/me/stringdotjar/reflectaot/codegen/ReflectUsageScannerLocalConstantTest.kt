@@ -255,4 +255,40 @@ class ReflectUsageScannerLocalConstantTest {
     assertEquals("run", site.nameOrNull)
     assertEquals("()V", site.descriptorOrNull)
   }
+
+  @Test
+  fun forEachField_resolves_receiver_through_lambda_second_operand() {
+    val out = File(tempDir, "outForEachLambda")
+    val ok =
+      compileSources(
+        out,
+        StringSource(
+          "fixture.ForEachFieldLambda",
+          """
+          package fixture;
+          import me.stringdotjar.reflectaot.Reflect;
+          public class ForEachFieldLambda {
+            public static void run(Player player) {
+              Reflect.forEachField(player, (field, value) -> { });
+            }
+          }
+          """.trimIndent(),
+        ),
+        StringSource(
+          "fixture.Player",
+          """
+          package fixture;
+          public class Player {
+            public int score;
+          }
+          """.trimIndent(),
+        ),
+      )
+    assertTrue(ok)
+    val bytes = readClassBytes(out, "fixture/ForEachFieldLambda")
+    val (reflectCalls, _) = ReflectUsageScanner.scanClass(bytes)
+    val site = reflectCalls.single { it.reflectMethod == ReflectApiNames.FOR_EACH_FIELD }
+    assertEquals(null, site.nameLiteralOrNull)
+    assertEquals("fixture/Player", site.receiverInternalOrNull)
+  }
 }

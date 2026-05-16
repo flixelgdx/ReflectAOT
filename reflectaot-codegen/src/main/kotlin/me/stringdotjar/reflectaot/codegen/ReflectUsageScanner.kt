@@ -6,6 +6,7 @@ import org.objectweb.asm.tree.AbstractInsnNode
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.FieldInsnNode
 import org.objectweb.asm.tree.FrameNode
+import org.objectweb.asm.tree.InvokeDynamicInsnNode
 import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.IntInsnNode
 import org.objectweb.asm.tree.LabelNode
@@ -742,7 +743,8 @@ object ReflectUsageScanner {
   /**
    * Steps backward across one JVM stack operand, so later logic can read the previous operand toward the start of the method.
    *
-   * Recognizes constants, local loads, simple field read tails, common boxed numeric tails, and `new` plus `invokespecial` shapes.
+   * Recognizes constants, local loads, simple field read tails, common boxed numeric tails, `new` plus `invokespecial`
+   * shapes, `invokedynamic` (lambdas and method references), and trailing `CHECKCAST` wrappers.
    *
    * @param insns Instruction array for the enclosing method.
    * @param p Index of the instruction that produced the consumed stack value.
@@ -844,7 +846,13 @@ object ReflectUsageScanner {
         if (insn.opcode == Opcodes.NEW) {
           return p - 1
         }
+        if (insn.opcode == Opcodes.CHECKCAST) {
+          var q = p - 1
+          q = skipNonInstructionsBackward(insns, q)
+          return stripOneExpressionBackward(insns, q)
+        }
       }
+      is InvokeDynamicInsnNode -> return p - 1
     }
     return -1
   }
