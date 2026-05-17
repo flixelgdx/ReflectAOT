@@ -33,7 +33,6 @@ object ReflectAOTCodegen {
    * @param javaOutputDir Directory that will receive generated `.java` files when Java emission runs.
    * @param scanRoots Compiled project outputs plus dependency jars or directories to scan and to load types from.
    * @param excludePackagePrefixes Extra dotted package prefixes merged with [ReflectClasspathScanDefaults.PACKAGE_PREFIX_EXCLUDES] before scanning.
-   * @param extraClasses Fully qualified names that must receive accessors even when no call site references them.
    * @throws IllegalStateException When scan results are inconsistent with ReflectAOT rules, when referenced types cannot be loaded, or when validation fails.
    */
   fun run(output: ReflectAOTOutput, bytecodeOutputDir: File, javaOutputDir: File, scanRoots: Collection<File>, excludePackagePrefixes: List<String>, extraTypes: List<String>) {
@@ -248,7 +247,7 @@ object ReflectAOTCodegen {
    *
    * @param scan Aggregated scan output containing [ClasspathScanResult.methodIdCalls].
    * @param typesByInternal Map from JVM internal name to loaded introspection models for owners referenced by method ids.
-   * @return Ordered list of bindings with dense integer ids used by generated dispatch and [ReflectMethodId] tokens.
+   * @return Ordered list of bindings with dense integer ids used by generated dispatch and `ReflectMethodId` tokens.
    * @throws IllegalStateException When an owner type cannot be loaded, when no overload matches, when overloads are ambiguous for the two-argument form, or when the resolved method is not a supported public instance method.
    */
   private fun buildMethodBindings(scan: ClasspathScanResult, typesByInternal: Map<String, TypeIntrospection.IntrospectedType>): List<MethodIdBinding> {
@@ -265,7 +264,7 @@ object ReflectAOTCodegen {
         if (s.descriptorOrNull != null) {
           s.descriptorOrNull
         } else {
-          // Two-arg Reflect.method(Class, String): pick the sole public overload, or fail with overload list.
+          // Two-arg Reflect.method(Class, String): pick the sole public overload, or fail with an overload list.
           val candidates = t.instanceMethods.filter { it.name == n }
           when (candidates.size) {
             0 ->
