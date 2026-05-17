@@ -27,7 +27,7 @@ import java.util.function.BiConsumer;
  *     </ul>
  *   </li>
  *   <li>
- *     Delegating calls to an installed runtime service provider ({@link ReflectAOTRuntime}) which abstracts over the actual implementation—
+ *     Delegating calls to an installed runtime service provider ({@link ReflectAOTRuntime}) which abstracts over the actual implementation,
  *     either the code generator's output or a fallback shim in test/non-AOT scenarios.
  *   </li>
  * </ul>
@@ -81,12 +81,16 @@ import java.util.function.BiConsumer;
  * boolean isObject = Reflect.isObject(value);
  *
  * // Iterate known members (requires generated dispatch for the receiver or class token).
- * // If the consumer is a lambda that captures other locals, assign it to a BiConsumer variable first so the
- * // ReflectAOT build scan can infer the receiver type reliably (see forEachField / forEachProperty / forEachMethod).
- * BiConsumer&lt;String, Object&gt; fieldVisitor = (name, value) -&gt; { };
+ * // If the consumer is a lambda that captures other locals, assign it to a BiConsumer variable first
+ * // so ReflectAOT's build scan can infer the receiver type reliably. If you don't do this, then
+ * // ReflectAOT will throw an exception at build time!
+ * // (see forEachField(...) / forEachProperty(...) / forEachMethod(...)).
+ * BiConsumer<String, Object> fieldVisitor = (name, value) -> { ... };
  * Reflect.forEachField(o, fieldVisitor);
  * Reflect.forEachProperty(o, fieldVisitor);
- * BiConsumer&lt;String, ReflectMethodId&gt; methodVisitor = (name, id) -&gt; { };
+ *
+ * // Same idea for methods too.
+ * BiConsumer<String, ReflectMethodId> methodVisitor = (name, id) -> { ... };
  * Reflect.forEachMethod(Foo.class, methodVisitor);
  *
  * // Write a field value directly.
@@ -195,9 +199,6 @@ public final class Reflect {
   /**
    * Creates a shallow copy of the source object.
    *
-   * <p>Implementations typically require a no-argument constructor and then copy non-static field
-   * values from source to destination.
-   *
    * @param <T> static receiver type at the call site
    * @param o source instance
    * @return copied instance when specialized
@@ -210,9 +211,6 @@ public final class Reflect {
 
   /**
    * Reads a field value from the target instance.
-   *
-   * <p>Implementations should resolve inherited fields and may allow non-public access depending on
-   * platform constraints. If the field cannot be resolved or read, an exception should be thrown.
    *
    * <p>When ReflectAOT is enabled, literal member names and {@code String} locals assigned from a
    * string literal in the same method are validated at build time. Method parameters and other
@@ -231,9 +229,6 @@ public final class Reflect {
   /**
    * Returns the available field and property names for the target.
    *
-   * <p>The result should include inherited members where applicable. Implementations may return a
-   * freshly allocated array for each call; callers should not assume caching.
-   *
    * @param o receiver object
    * @return field names available on the target type (never {@code null}; may be zero-length)
    */
@@ -246,7 +241,7 @@ public final class Reflect {
    * Invokes {@code consumer} once per public instance field on the receiver type, in stable declaration order (same
    * members as {@link #field}).
    *
-   * <p>When you use a lambda that closes over other local variables (for example arrays or collections built next to the
+   * <p>When you use a lambda that closes over other local variables (for example, arrays or collections built next to the
    * call), assign the lambda to a {@link BiConsumer} variable and pass that variable here. Inline lambdas with captures
    * can prevent the ReflectAOT scanner from inferring {@code o} as the receiver, which breaks specialization or
    * produces incorrect metadata. A hoisted {@code BiConsumer} keeps the receiver argument as a plain stack value next to
@@ -305,10 +300,6 @@ public final class Reflect {
 
   /**
    * Invokes a method using a build-time method identifier and arguments.
-   *
-   * <p>Implementations should resolve overloads using the identifier assigned when the call site
-   * was specialized. The identifier is an {@code int} to keep heap usage low and avoid allocating
-   * token objects.
    *
    * @param o receiver object
    * @param methodId build-time method identifier
@@ -416,10 +407,8 @@ public final class Reflect {
   }
 
   /**
-   * Reads a property value from the target.
-   *
-   * <p>Implementations may resolve JavaBean getters when available and fall back to direct field
-   * access when appropriate.
+   * Reads a property value from the target via JavaBean conventions when available, and falling back to direct field
+   * reads when appropriate.
    *
    * @param o receiver object
    * @param field property name to resolve
@@ -433,8 +422,6 @@ public final class Reflect {
 
   /**
    * Checks whether a field with the given name exists on the target instance.
-   *
-   * <p>Implementations should include inherited fields from superclasses where metadata allows.
    *
    * <p>When ReflectAOT has installed specialized dispatch for the receiver type, names that are not present still
    * yield {@code false} at runtime. They are not rejected at codegen time (unlike {@link #field}, {@link #property},
@@ -462,6 +449,7 @@ public final class Reflect {
 
   /**
    * Returns whether a value should be treated as a callable.
+   *
    * @param v value to test
    * @return {@code true} for supported functional shapes (see project documentation)
    */
@@ -498,10 +486,7 @@ public final class Reflect {
   }
 
   /**
-   * Writes a property value on the target.
-   *
-   * <p>Resolve JavaBean setters when available and falls back to direct field
-   * writes when appropriate. Unsupported writes will throw an exception.
+   * Writes a property value on the target instance via JavaBean conventions.
    *
    * @param o receiver object
    * @param field property name to resolve
