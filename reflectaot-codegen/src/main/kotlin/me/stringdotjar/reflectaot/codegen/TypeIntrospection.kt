@@ -223,6 +223,7 @@ object TypeIntrospection {
    *
    * Private, package, or protected fields are omitted because generated accessors live outside the declaring class.
    * Final fields are omitted (not assignable from a static helper).
+   * Entries without a field descriptor are skipped (unexpected ASM shape).
    *
    * @param internalName Leaf type internal name.
    * @param roots Classpath used to walk superclasses.
@@ -254,7 +255,8 @@ object TypeIntrospection {
         if (!seen.add(nm)) {
           continue
         }
-        out.add(InstanceFieldRef(nm, fn.desc!!, decl))
+        val desc = fn.desc ?: continue
+        out.add(InstanceFieldRef(nm, desc, decl))
       }
     }
     return out

@@ -126,7 +126,7 @@ object JavaMirrorEmitter {
         val ret = Type.getReturnType(p.getterDesc).descriptor
         sb.append("      return ").append(boxReadDispatch("o." + p.getterName + "()", ret)).append(";\n")
       } else if (p.fieldName != null && t.fields.containsKey(p.fieldName)) {
-        val fd = t.fields[p.fieldName]!!
+        val fd = t.fields.getValue(p.fieldName)
         sb.append("      return ").append(boxReadDispatch("o." + p.fieldName, fd)).append(";\n")
       }
       sb.append("    }\n")
@@ -165,7 +165,7 @@ object JavaMirrorEmitter {
         }
       }
       if (p.fieldName != null && t.fieldsWritable.containsKey(p.fieldName)) {
-        val fd = t.fieldsWritable[p.fieldName]!!
+        val fd = t.fieldsWritable.getValue(p.fieldName)
         sb
           .append("      o.")
           .append(p.fieldName)
@@ -258,7 +258,7 @@ object JavaMirrorEmitter {
           val ret = Type.getReturnType(pbean.getterDesc).descriptor
           sb.append(boxReadDispatch("o." + pbean.getterName + "()", ret)).append(");\n")
         } else if (pbean.fieldName != null && t.fields.containsKey(pbean.fieldName)) {
-          val fd = t.fields[pbean.fieldName]!!
+          val fd = t.fields.getValue(pbean.fieldName)
           sb.append(boxReadDispatch("o." + pbean.fieldName, fd)).append(");\n")
         } else {
           continue

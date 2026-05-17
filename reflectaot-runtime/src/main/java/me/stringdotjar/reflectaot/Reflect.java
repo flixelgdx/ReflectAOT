@@ -81,9 +81,13 @@ import java.util.function.BiConsumer;
  * boolean isObject = Reflect.isObject(value);
  *
  * // Iterate known members (requires generated dispatch for the receiver or class token).
- * Reflect.forEachField(o, consumer);
- * Reflect.forEachProperty(o, consumer);
- * Reflect.forEachMethod(Foo.class, consumer);
+ * // If the consumer is a lambda that captures other locals, assign it to a BiConsumer variable first so the
+ * // ReflectAOT build scan can infer the receiver type reliably (see forEachField / forEachProperty / forEachMethod).
+ * BiConsumer&lt;String, Object&gt; fieldVisitor = (name, value) -&gt; { };
+ * Reflect.forEachField(o, fieldVisitor);
+ * Reflect.forEachProperty(o, fieldVisitor);
+ * BiConsumer&lt;String, ReflectMethodId&gt; methodVisitor = (name, id) -&gt; { };
+ * Reflect.forEachMethod(Foo.class, methodVisitor);
  *
  * // Write a field value directly.
  * Reflect.setField(o, "field", value);
@@ -242,6 +246,12 @@ public final class Reflect {
    * Invokes {@code consumer} once per public instance field on the receiver type, in stable declaration order (same
    * members as {@link #field}).
    *
+   * <p>When you use a lambda that closes over other local variables (for example arrays or collections built next to the
+   * call), assign the lambda to a {@link BiConsumer} variable and pass that variable here. Inline lambdas with captures
+   * can prevent the ReflectAOT scanner from inferring {@code o} as the receiver, which breaks specialization or
+   * produces incorrect metadata. A hoisted {@code BiConsumer} keeps the receiver argument as a plain stack value next to
+   * the call.
+   *
    * @param o receiver object
    * @param consumer receives each field name and boxed value
    * @throws NullPointerException when {@code consumer} is null
@@ -258,6 +268,10 @@ public final class Reflect {
    * Invokes {@code consumer} once per readable property name (JavaBeans first, then public fields), matching {@link
    * #property}.
    *
+   * <p>Same guidance as {@link #forEachField(Object, BiConsumer)}: if the consumer is a lambda that captures locals,
+   * store it in a {@link BiConsumer} variable first so the build-time scan can bind the correct receiver type for
+   * {@code o}.
+   *
    * @param o receiver object
    * @param consumer receives each property name and boxed value
    * @throws NullPointerException when {@code consumer} is null
@@ -273,6 +287,9 @@ public final class Reflect {
   /**
    * Invokes {@code consumer} once per build-resolved {@link Reflect#method(Class, String, String)} binding for {@code
    * clazz} (including overloads of the same simple name).
+   *
+   * <p>If the consumer lambda captures locals, hoist it to a {@link BiConsumer} variable before passing it in, for the
+   * same receiver inference reasons as {@link #forEachField(Object, BiConsumer)}.
    *
    * @param clazz class literal (must match the class token used with {@link Reflect#method(Class, String)})
    * @param consumer receives each JVM method name and its {@link ReflectMethodId}

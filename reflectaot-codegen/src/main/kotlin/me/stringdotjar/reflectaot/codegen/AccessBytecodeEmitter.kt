@@ -169,9 +169,12 @@ object AccessBytecodeEmitter {
           ga.invokeVirtual(ownerType, AsmMethod(p.getterName, p.getterDesc))
           ga.box(rt)
         } else {
+          val fn =
+            p.fieldName
+              ?: error("ReflectAOT internal: readable bean property ${p.name} has no getter but fieldName was null")
           ga.loadArg(0)
-          val fd = type.fields[p.fieldName!!]!!
-          ga.getField(ownerType, p.fieldName, Type.getType(fd))
+          val fd = type.fields.getValue(fn)
+          ga.getField(ownerType, fn, Type.getType(fd))
           ga.box(Type.getType(fd))
         }
         ga.returnValue()
@@ -217,7 +220,7 @@ object AccessBytecodeEmitter {
         if (p.fieldName != null && type.fieldsWritable.containsKey(p.fieldName)) {
           ga.loadArg(0)
           ga.loadArg(2)
-          val ft = Type.getType(type.fieldsWritable[p.fieldName]!!)
+          val ft = Type.getType(type.fieldsWritable.getValue(p.fieldName))
           ga.unbox(ft)
           ga.putField(ownerType, p.fieldName, ft)
           ga.returnValue()
@@ -406,7 +409,7 @@ object AccessBytecodeEmitter {
           ga.invokeVirtual(ownerType, AsmMethod(pbean.getterName, pbean.getterDesc))
           ga.box(rt)
         } else if (pbean.fieldName != null && type.fields.containsKey(pbean.fieldName)) {
-          val fd = type.fields[pbean.fieldName]!!
+          val fd = type.fields.getValue(pbean.fieldName)
           ga.getField(ownerType, pbean.fieldName, Type.getType(fd))
           ga.box(Type.getType(fd))
         } else {
