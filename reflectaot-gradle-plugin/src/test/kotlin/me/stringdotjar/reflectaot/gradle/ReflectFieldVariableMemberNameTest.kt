@@ -20,8 +20,10 @@ class ReflectFieldVariableMemberNameTest {
           id 'me.stringdotjar.reflectaot'
       }
       repositories {
-          mavenLocal()
           mavenCentral()
+      }
+      dependencies {
+          implementation files('${ReflectAOTTestRuntimeClasspath.runtimeJarPathForGroovyFiles()}')
       }
       """.trimIndent(),
     )

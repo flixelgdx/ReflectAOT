@@ -1,6 +1,7 @@
 package me.stringdotjar.reflectaot;
 
 import java.util.List;
+import java.util.function.BiConsumer;
 
 /**
  * Build-generated dispatch for {@link Reflect}. No {@link java.lang.reflect} types.
@@ -66,6 +67,24 @@ public interface ReflectAOTRuntime {
 
   /**
    * @param o receiver object
+   * @param consumer invoked with each public instance field name and boxed value (same members as {@link Reflect#field})
+   */
+  void forEachField(Object o, BiConsumer<String, Object> consumer);
+
+  /**
+   * @param o receiver object
+   * @param consumer invoked with each readable property name and boxed value (same resolution order as {@link Reflect#property})
+   */
+  void forEachProperty(Object o, BiConsumer<String, Object> consumer);
+
+  /**
+   * @param clazz class token (same as {@link Reflect#method(Class, String)})
+   * @param consumer invoked with each method simple name and its build-resolved {@link ReflectMethodId}
+   */
+  void forEachMethod(Class<?> clazz, BiConsumer<String, ReflectMethodId> consumer);
+
+  /**
+   * @param o receiver object
    * @return shallow copy when specialized; otherwise throws
    */
   Object copy(Object o);
@@ -93,7 +112,8 @@ public interface ReflectAOTRuntime {
 
   /**
    * @param v value to test
-   * @return {@code true} for non-primitive-like values per runtime classification rules
+   * @return {@code true} for non-null values that are not boxed primitives ({@link Boolean}, {@link Number},
+   *     {@link Character}); strings and ordinary reference types return {@code true}
    */
   boolean isObject(Object v);
 

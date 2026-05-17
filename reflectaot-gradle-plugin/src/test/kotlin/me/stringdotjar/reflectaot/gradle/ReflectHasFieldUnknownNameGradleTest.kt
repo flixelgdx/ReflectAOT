@@ -6,13 +6,14 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.assertTrue
 
-class ReflectAOTPluginSmokeTest {
+/** `hasField` must not fail codegen for names that are absent at runtime (returns false). */
+class ReflectHasFieldUnknownNameGradleTest {
 
   @TempDir lateinit var temp: File
 
   @Test
-  fun `plugin generates and project compiles`() {
-    File(temp, "settings.gradle").writeText("rootProject.name = 'reflectaot-smoke'\n")
+  fun `classes succeeds when hasField uses a name that is not on the receiver type`() {
+    File(temp, "settings.gradle").writeText("rootProject.name = 'reflectaot-hasfield-unknown'\n")
     File(temp, "build.gradle").writeText(
       """
       plugins {
@@ -30,13 +31,22 @@ class ReflectAOTPluginSmokeTest {
 
     val pkg = File(temp, "src/main/java/demo")
     pkg.mkdirs()
+    File(pkg, "Holder.java").writeText(
+      """
+      package demo;
+      public class Holder {
+          public int someField;
+      }
+      """.trimIndent(),
+    )
     File(pkg, "UseReflect.java").writeText(
       """
       package demo;
       import me.stringdotjar.reflectaot.Reflect;
       public class UseReflect {
-
-          public static int cmp(Integer a, Integer b) { return Reflect.compare(a, b); }
+          public static boolean check(Holder h) {
+              return Reflect.hasField(h, "notARealMember");
+          }
       }
       """.trimIndent(),
     )
@@ -46,7 +56,7 @@ class ReflectAOTPluginSmokeTest {
         .create()
         .withProjectDir(temp)
         .withPluginClasspath()
-        .withArguments("build")
+        .withArguments("classes")
         .forwardOutput()
         .build()
 

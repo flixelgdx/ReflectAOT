@@ -4,18 +4,25 @@ import org.objectweb.asm.Type
 import java.io.File
 
 /**
- * Emits Java 7-compatible sources mirroring [AccessBytecodeEmitter] / [RegistryBytecodeEmitter] for
- * toolchains that require `.java` (e.g. GWT). Signatures align with [ReflectApiNames].
+ * Emits Java 7 compatible sources that mirror [AccessBytecodeEmitter] and [RegistryBytecodeEmitter] for toolchains that
+ * require `.java` inputs. Method signatures align with the static entry points documented on [ReflectApiNames].
  */
 object JavaMirrorEmitter {
 
-  /** Writes `*_ReflectAOT.java` per type plus `ReflectAOTRegistry.java`. */
+  /**
+   * Writes one `*_ReflectAOT.java` accessor per type plus `ReflectAOTRegistry.java` under [javaOut].
+   *
+   * @param javaOut Root directory that will receive the generated Java package tree.
+   * @param types Introspected types that need accessor sources.
+   * @param methodBindings Full method id binding list used when rendering `callMethod` dispatch.
+   * @param roots Classpath roots forwarded to copy and call-method helpers that need subtype checks.
+   */
   fun emit(javaOut: File, types: List<TypeIntrospection.IntrospectedType>, methodBindings: List<MethodIdBinding>, roots: Collection<File>) {
     val sorted = types.sortedBy { it.internalName }
     for (t in sorted) {
       emitAccessor(javaOut, t, methodBindings, roots)
     }
-    emitRegistry(javaOut, sorted)
+    emitRegistry(javaOut, sorted, methodBindings)
   }
 
   private fun fqcn(internalName: String): String = internalName.replace('/', '.')
@@ -34,7 +41,9 @@ object JavaMirrorEmitter {
     val sb = StringBuilder()
     sb.append("package ").append(pkg).append(";\n\n")
     sb.append("import java.util.ArrayList;\n")
-    sb.append("import java.util.List;\n\n")
+    sb.append("import java.util.List;\n")
+    sb.append("import java.util.function.BiConsumer;\n")
+    sb.append("import me.stringdotjar.reflectaot.ReflectMethodId;\n\n")
     sb.append("public final class ").append(simple).append(" {\n")
     sb.append("  private ").append(simple).append("() {}\n\n")
 
@@ -44,8 +53,11 @@ object JavaMirrorEmitter {
     sb.append(renderProperty(fq, t))
     sb.append(renderSetProperty(fq, t))
     sb.append(renderFields(fq, t))
+    sb.append(renderForEachField(fq, t))
+    sb.append(renderForEachProperty(fq, t))
     sb.append(renderCopy(fq, t, roots))
     sb.append(renderCallMethod(fq, t, methodBindings, roots))
+    sb.append(renderForEachMethod(fq, t, methodBindings))
 
     sb.append("}\n")
 
@@ -114,7 +126,7 @@ object JavaMirrorEmitter {
         val ret = Type.getReturnType(p.getterDesc).descriptor
         sb.append("      return ").append(boxReadDispatch("o." + p.getterName + "()", ret)).append(";\n")
       } else if (p.fieldName != null && t.fields.containsKey(p.fieldName)) {
-        val fd = t.fields[p.fieldName]!!
+        val fd = t.fields.getValue(p.fieldName)
         sb.append("      return ").append(boxReadDispatch("o." + p.fieldName, fd)).append(";\n")
       }
       sb.append("    }\n")
@@ -153,7 +165,7 @@ object JavaMirrorEmitter {
         }
       }
       if (p.fieldName != null && t.fieldsWritable.containsKey(p.fieldName)) {
-        val fd = t.fieldsWritable[p.fieldName]!!
+        val fd = t.fieldsWritable.getValue(p.fieldName)
         sb
           .append("      o.")
           .append(p.fieldName)
@@ -204,6 +216,78 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
+  private fun forEachPropertyNameOrder(t: TypeIntrospection.IntrospectedType): List<String> {
+    val ordered = ArrayList<String>()
+    val seen = HashSet<String>()
+    for (p in t.properties) {
+      if (!ReflectPropertyAnalysis.beanReadable(p, t)) {
+        continue
+      }
+      if (seen.add(p.name)) {
+        ordered.add(p.name)
+      }
+    }
+    for ((name, _) in t.fields) {
+      if (seen.add(name)) {
+        ordered.add(name)
+      }
+    }
+    return ordered
+  }
+
+  private fun renderForEachField(fq: String, t: TypeIntrospection.IntrospectedType): String {
+    val sb = StringBuilder()
+    sb.append("  public static void ").append(ReflectApiNames.FOR_EACH_FIELD).append("(").append(fq).append(" o, BiConsumer<String, Object> consumer) {\n")
+    sb.append("    if (consumer == null) throw new NullPointerException(\"consumer\");\n")
+    for ((name, desc) in t.fields) {
+      sb.append("    consumer.accept(\"").append(escape(name)).append("\", ").append(boxReadDispatch("o." + name, desc)).append(");\n")
+    }
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderForEachProperty(fq: String, t: TypeIntrospection.IntrospectedType): String {
+    val sb = StringBuilder()
+    sb.append("  public static void ").append(ReflectApiNames.FOR_EACH_PROPERTY).append("(").append(fq).append(" o, BiConsumer<String, Object> consumer) {\n")
+    sb.append("    if (consumer == null) throw new NullPointerException(\"consumer\");\n")
+    for (name in forEachPropertyNameOrder(t)) {
+      val pbean = t.properties.firstOrNull { it.name == name && ReflectPropertyAnalysis.beanReadable(it, t) }
+      if (pbean != null) {
+        sb.append("    consumer.accept(\"").append(escape(name)).append("\", ")
+        if (pbean.getterName != null && pbean.getterDesc != null) {
+          val ret = Type.getReturnType(pbean.getterDesc).descriptor
+          sb.append(boxReadDispatch("o." + pbean.getterName + "()", ret)).append(");\n")
+        } else if (pbean.fieldName != null && t.fields.containsKey(pbean.fieldName)) {
+          val fd = t.fields.getValue(pbean.fieldName)
+          sb.append(boxReadDispatch("o." + pbean.fieldName, fd)).append(");\n")
+        } else {
+          continue
+        }
+      } else {
+        val desc = t.fields[name] ?: continue
+        sb.append("    consumer.accept(\"").append(escape(name)).append("\", ")
+        sb.append(boxReadDispatch("o." + name, desc)).append(");\n")
+      }
+    }
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderForEachMethod(_fq: String, t: TypeIntrospection.IntrospectedType, methodBindings: List<MethodIdBinding>): String {
+    val sb = StringBuilder()
+    sb.append("  public static void ").append(ReflectApiNames.FOR_EACH_METHOD).append("(BiConsumer<String, ReflectMethodId> consumer) {\n")
+    sb.append("    if (consumer == null) throw new NullPointerException(\"consumer\");\n")
+    val bindings =
+      methodBindings
+        .filter { it.userClassInternal == t.internalName }
+        .sortedWith(compareBy({ it.name }, { it.descriptor }))
+    for (b in bindings) {
+      sb.append("    consumer.accept(\"").append(escape(b.name)).append("\", new ReflectMethodId(").append(b.id).append("));\n")
+    }
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
   /** Public no-arg ctor + shallow assignment of each [TypeIntrospection.instanceFieldsForCopy] field (matches bytecode emitter). */
   private fun renderCopy(fq: String, t: TypeIntrospection.IntrospectedType, roots: Collection<File>): String {
     val refs = TypeIntrospection.instanceFieldsForCopy(t.internalName, roots) ?: emptyList()
@@ -233,7 +317,7 @@ object JavaMirrorEmitter {
     sb.append("  public static Object ").append(ReflectApiNames.CALL_METHOD).append("(").append(fq).append(" o, int methodId, java.util.List<?> args) {\n")
     if (bindings.isEmpty()) {
       sb.append(
-        "    throw new IllegalArgumentException(\"No Reflect.${ReflectApiNames.METHOD} bindings for " + fq + "\");\n",
+        "    throw new IllegalArgumentException(\"No Reflect.${ReflectApiNames.METHOD} bindings for $fq\");\n",
       )
       sb.append("  }\n\n")
       return sb.toString()
@@ -291,7 +375,7 @@ object JavaMirrorEmitter {
       else -> "(" + javaTypeFromDescriptor(t.descriptor) + ") " + expr
     }
 
-  /** Registry `copy` — dispatches to typed accessor `copy`, then default stub. */
+  /** Registry `copy` dispatches to typed accessor `copy`, then the default stub. */
   private fun renderRegistryCopy(sorted: List<TypeIntrospection.IntrospectedType>): String {
     val sb = StringBuilder()
     sb.append("  public Object ").append(ReflectApiNames.COPY).append("(Object o) {\n")
@@ -312,7 +396,7 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  /** Registry `callMethod` — chains `instanceof` to typed accessor static methods. */
+  /** Registry `callMethod` chains `instanceof` checks to typed accessor static methods. */
   private fun renderRegistryCallMethod(sorted: List<TypeIntrospection.IntrospectedType>): String {
     val sb = StringBuilder()
     sb.append("  public Object ").append(ReflectApiNames.CALL_METHOD).append("(Object o, int methodId, java.util.List<?> args) {\n")
@@ -333,13 +417,15 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
-  private fun emitRegistry(javaOut: File, sorted: List<TypeIntrospection.IntrospectedType>) {
+  private fun emitRegistry(javaOut: File, sorted: List<TypeIntrospection.IntrospectedType>, methodBindings: List<MethodIdBinding>) {
     val pkg = "me.stringdotjar.reflectaot.generated"
     val dir = File(javaOut, pkg.replace('.', '/'))
     dir.mkdirs()
     val sb = StringBuilder()
     sb.append("package ").append(pkg).append(";\n\n")
     sb.append("import java.util.List;\n")
+    sb.append("import java.util.function.BiConsumer;\n")
+    sb.append("import me.stringdotjar.reflectaot.ReflectMethodId;\n")
     sb.append("import me.stringdotjar.reflectaot.ReflectAOTDefaultDispatch;\n")
     sb.append("import me.stringdotjar.reflectaot.ReflectAOTRuntime;\n")
     for (t in sorted) {
@@ -364,6 +450,9 @@ object JavaMirrorEmitter {
     sb.append(renderRegistryDispatch(ReflectApiNames.PROPERTY, "Object", sorted, ReflectApiNames.PROPERTY))
     sb.append(renderRegistryDispatchVoid(ReflectApiNames.SET_PROPERTY, sorted, ReflectApiNames.SET_PROPERTY))
     sb.append(renderRegistryFields(sorted))
+    sb.append(renderRegistryForEachField(sorted))
+    sb.append(renderRegistryForEachProperty(sorted))
+    sb.append(renderRegistryForEachMethod(sorted, methodBindings))
 
     sb.append("}\n")
     File(dir, "ReflectAOTRegistry.java").writeText(sb.toString())
@@ -504,6 +593,73 @@ object JavaMirrorEmitter {
     return sb.toString()
   }
 
+  private fun renderRegistryForEachField(sorted: List<TypeIntrospection.IntrospectedType>): String {
+    val sb = StringBuilder()
+    sb.append("  public void ").append(ReflectApiNames.FOR_EACH_FIELD).append("(Object o, BiConsumer<String, Object> consumer) {\n")
+    if (sorted.isEmpty()) {
+      sb.append("    ReflectAOTDefaultDispatch.").append(ReflectApiNames.FOR_EACH_FIELD).append("(o, consumer);\n")
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    for (t in sorted) {
+      val fq = fqcn(t.internalName)
+      val acc = accessClassFqcn(t.internalName)
+      sb.append("    if (o instanceof ").append(fq).append(") {\n")
+      sb.append("      ").append(acc).append(".").append(ReflectApiNames.FOR_EACH_FIELD).append("((").append(fq).append(") o, consumer);\n")
+      sb.append("      return;\n")
+      sb.append("    }\n")
+    }
+    sb.append("    ReflectAOTDefaultDispatch.").append(ReflectApiNames.FOR_EACH_FIELD).append("(o, consumer);\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderRegistryForEachProperty(sorted: List<TypeIntrospection.IntrospectedType>): String {
+    val sb = StringBuilder()
+    sb.append("  public void ").append(ReflectApiNames.FOR_EACH_PROPERTY).append("(Object o, BiConsumer<String, Object> consumer) {\n")
+    if (sorted.isEmpty()) {
+      sb.append("    ReflectAOTDefaultDispatch.").append(ReflectApiNames.FOR_EACH_PROPERTY).append("(o, consumer);\n")
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    for (t in sorted) {
+      val fq = fqcn(t.internalName)
+      val acc = accessClassFqcn(t.internalName)
+      sb.append("    if (o instanceof ").append(fq).append(") {\n")
+      sb.append("      ").append(acc).append(".").append(ReflectApiNames.FOR_EACH_PROPERTY).append("((").append(fq).append(") o, consumer);\n")
+      sb.append("      return;\n")
+      sb.append("    }\n")
+    }
+    sb.append("    ReflectAOTDefaultDispatch.").append(ReflectApiNames.FOR_EACH_PROPERTY).append("(o, consumer);\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
+  private fun renderRegistryForEachMethod(sorted: List<TypeIntrospection.IntrospectedType>, methodBindings: List<MethodIdBinding>): String {
+    val sb = StringBuilder()
+    sb.append("  public void ").append(ReflectApiNames.FOR_EACH_METHOD).append("(Class<?> clazz, BiConsumer<String, ReflectMethodId> consumer) {\n")
+    val internalsWithBindings = methodBindings.map { it.userClassInternal }.toSet()
+    if (sorted.isEmpty()) {
+      sb.append("    ReflectAOTDefaultDispatch.").append(ReflectApiNames.FOR_EACH_METHOD).append("(clazz, consumer);\n")
+      sb.append("  }\n\n")
+      return sb.toString()
+    }
+    for (t in sorted) {
+      if (t.internalName !in internalsWithBindings) {
+        continue
+      }
+      val fq = fqcn(t.internalName)
+      val acc = accessClassFqcn(t.internalName)
+      sb.append("    if (clazz == ").append(fq).append(".class) {\n")
+      sb.append("      ").append(acc).append(".").append(ReflectApiNames.FOR_EACH_METHOD).append("(consumer);\n")
+      sb.append("      return;\n")
+      sb.append("    }\n")
+    }
+    sb.append("    ReflectAOTDefaultDispatch.").append(ReflectApiNames.FOR_EACH_METHOD).append("(clazz, consumer);\n")
+    sb.append("  }\n\n")
+    return sb.toString()
+  }
+
   private fun escape(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
 
   private fun boxRead(expr: String, desc: String): String =
@@ -532,7 +688,7 @@ object JavaMirrorEmitter {
       else -> "(" + javaTypeFromDescriptor(desc) + ") " + value
     }
 
-  /** JVM field/method descriptor → Java source type name (including arrays). */
+  /** Maps a JVM field or method descriptor to a Java source type name, including arrays. */
   private fun javaTypeFromDescriptor(descriptor: String): String {
     var i = 0
     while (i < descriptor.length && descriptor[i] == '[') {

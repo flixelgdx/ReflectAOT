@@ -5,13 +5,22 @@ import org.objectweb.asm.tree.ClassNode
 import java.io.File
 
 /**
- * Answers `sub <: sup` using **superclass chains only** (implements-clause interfaces are ignored).
+ * Minimal JVM subtype check used when generated `callMethod` dispatch must know whether a declaring type applies.
  *
- * Matches how `invokevirtual` resolves — sufficient for pairing `callMethod` targets with accessors.
+ * This walks superclass links only. Implemented interfaces are ignored on purpose because ReflectAOT only needs a
+ * conservative answer consistent with `invokevirtual` receiver checks against generated accessor classes.
  */
 object JvmSubtype {
 
-  /** Walks `subInternal`’s superclass chain until [supInternal] or [java/lang/Object]. */
+  /**
+   * Returns true when [subInternal] is the same as [supInternal], or when [supInternal] appears on the superclass chain
+   * above [subInternal]. [java/lang/Object] is treated as a universal supertype for this helper.
+   *
+   * @param subInternal Candidate subtype internal name.
+   * @param supInternal Candidate supertype internal name.
+   * @param roots Classpath roots used to read each class file while walking supers.
+   * @return True when the subtype relation holds under the documented limitations.
+   */
   fun isSubtype(subInternal: String, supInternal: String, roots: Collection<File>): Boolean {
     if (supInternal == "java/lang/Object") {
       return true
@@ -26,6 +35,13 @@ object JvmSubtype {
     return false
   }
 
+  /**
+   * Reads the `superName` field from the class file bytes for [internal].
+   *
+   * @param internal JVM internal name whose superclass is requested.
+   * @param roots Classpath roots passed to [TypeIntrospection.loadClassBytes].
+   * @return The superclass internal name, or null when bytes are missing or the reader cannot proceed.
+   */
   private fun readSuperName(internal: String, roots: Collection<File>): String? {
     val bytes = TypeIntrospection.loadClassBytes(internal, roots) ?: return null
     val cn = ClassNode()

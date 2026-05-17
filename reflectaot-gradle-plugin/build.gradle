@@ -4,26 +4,6 @@ plugins {
   id 'maven-publish'
 }
 
-def embedReflectAOTRuntime = tasks.register('embedReflectAOTRuntime', Copy) {
-  dependsOn ':reflectaot-runtime:jar'
-  from(project(':reflectaot-runtime').tasks.named('jar'))
-  rename { 'reflectaot-runtime-embedded.jar' }
-  into(layout.buildDirectory.dir('generatedReflectResources/META-INF/reflectaot'))
-}
-
-def embedReflectAOTRuntimeSources = tasks.register('embedReflectAOTRuntimeSources', Copy) {
-  dependsOn ':reflectaot-runtime:sourcesJar'
-  from(project(':reflectaot-runtime').tasks.named('sourcesJar'))
-  rename { 'reflectaot-runtime-embedded-sources.jar' }
-  into(layout.buildDirectory.dir('generatedReflectResources/META-INF/reflectaot'))
-}
-
-sourceSets.main.resources.srcDir(layout.buildDirectory.dir('generatedReflectResources'))
-tasks.named('processResources', ProcessResources).configure {
-  dependsOn embedReflectAOTRuntime
-  dependsOn embedReflectAOTRuntimeSources
-}
-
 kotlin {
   jvmToolchain(17)
 }
@@ -35,11 +15,6 @@ java {
 
 tasks.named('javadoc', Javadoc).configure {
   options.encoding = 'UTF-8'
-}
-
-tasks.named('sourcesJar', Jar).configure {
-  dependsOn(embedReflectAOTRuntime)
-  dependsOn(embedReflectAOTRuntimeSources)
 }
 
 dependencies {
@@ -59,13 +34,18 @@ gradlePlugin {
       id = 'me.stringdotjar.reflectaot'
       implementationClass = 'me.stringdotjar.reflectaot.gradle.ReflectAOTPlugin'
       displayName = 'ReflectAOT'
-      description = 'Build-time Reflect accessors without java.lang.reflect.'
+      description = 'ReflectAOT Gradle plugin: bytecode scanning and accessor generation (add reflectaot-runtime yourself).'
     }
   }
 }
 
-tasks.test {
+tasks.named('test', Test).configure {
+  dependsOn ':reflectaot-runtime:jar'
   useJUnitPlatform()
+  systemProperty(
+    'reflectaot.runtime.jar',
+    rootProject.project(':reflectaot-runtime').tasks.named('jar', Jar).get().archiveFile.get().asFile.absolutePath,
+  )
 }
 
 publishing {
@@ -74,7 +54,7 @@ publishing {
       artifactId = 'reflectaot-gradle-plugin'
       pom {
         name = 'reflectaot-gradle-plugin'
-        description = 'ReflectAOT Gradle plugin: bytecode scanning, accessor generation, runtime injection.'
+        description = 'ReflectAOT Gradle plugin: bytecode scanning and accessor generation. Declare reflectaot-runtime on your compile classpath.'
         url = 'https://github.com/stringfromjava/ReflectAOT'
         licenses {
           license {
@@ -97,4 +77,3 @@ publishing {
     }
   }
 }
-

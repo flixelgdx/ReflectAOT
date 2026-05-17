@@ -1,9 +1,10 @@
 package me.stringdotjar.reflectaot;
 
 import java.util.List;
+import java.util.function.BiConsumer;
 
 /**
- * Hand-written {@link ReflectAOTRuntime} behaviors that do not require per-type generated
+ * Handwritten {@link ReflectAOTRuntime} behaviors that do not require per-type generated
  * accessors.
  *
  * <p>These helpers are called from generated {@code ReflectAOTRegistry} implementations so
@@ -76,14 +77,14 @@ public final class ReflectAOTDefaultDispatch {
 
   /**
    * @param v value to test
-   * @return {@code true} for non-null non-primitive-like values (Haxe-style object classification)
+   * @return {@code true} for non-null values that are not boxed primitives ({@link Boolean}, {@link Number},
+   *     {@link Character}); strings and other reference types return {@code true}
    */
   public static boolean isObject(Object v) {
     return v != null
         && !(v instanceof Boolean
             || v instanceof Number
-            || v instanceof Character
-            || v instanceof String);
+            || v instanceof Character);
   }
 
   /**
@@ -110,6 +111,31 @@ public final class ReflectAOTDefaultDispatch {
    */
   public static Object copy(Object o) {
     throw new UnsupportedOperationException("copy not specialized for " + safe(o));
+  }
+
+  /**
+   * @param o receiver object
+   * @param consumer name/value consumer
+   */
+  public static void forEachField(Object o, BiConsumer<?, ?> consumer) {
+    throw new UnsupportedOperationException("forEachField not specialized for " + safe(o));
+  }
+
+  /**
+   * @param o receiver object
+   * @param consumer name/value consumer
+   */
+  public static void forEachProperty(Object o, BiConsumer<?, ?> consumer) {
+    throw new UnsupportedOperationException("forEachProperty not specialized for " + safe(o));
+  }
+
+  /**
+   * @param clazz class token whose {@link Reflect#method(Class, String, String)} bindings should be iterated
+   * @param consumer name / {@link ReflectMethodId} consumer
+   */
+  public static void forEachMethod(Class<?> clazz, BiConsumer<?, ?> consumer) {
+    throw new UnsupportedOperationException(
+        "forEachMethod not specialized for " + (clazz == null ? "null" : clazz.getName()));
   }
 
   private static String safe(Object o) {

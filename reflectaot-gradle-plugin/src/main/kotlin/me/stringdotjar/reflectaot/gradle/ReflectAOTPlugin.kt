@@ -14,42 +14,6 @@ class ReflectAOTPlugin : Plugin<Project> {
 
     val ext = project.extensions.create("reflectaot", ReflectAOTExtension::class.java, project)
 
-    val embeddedRuntime = ReflectAOTPlugin::class.java.getResource("/META-INF/reflectaot/reflectaot-runtime-embedded.jar")
-    if (embeddedRuntime != null) {
-      val version =
-        ReflectAOTPlugin::class.java
-          .getResourceAsStream("/META-INF/reflectaot/runtime-version.txt")
-          ?.use { it.bufferedReader().readText().trim() }
-          ?: "0.1.0-SNAPSHOT"
-      // dependencyResolutionManagement (FAIL_ON_PROJECT_REPOS / PREFER_SETTINGS) ignores
-      // project.repositories — so a file repo under the build directory is never consulted.
-      // Installing into ~/.m2 matches mavenLocal() in settings.gradle, which most multi-module
-      // builds already use for snapshots; IntelliJ can attach -sources.jar from the same tree.
-      EmbeddedRuntimeMavenLocal.install(
-        version,
-        embeddedRuntime.openStream(),
-        ReflectAOTPlugin::class.java.getResourceAsStream("/META-INF/reflectaot/reflectaot-runtime-embedded-sources.jar"),
-      )
-      project.logger.lifecycle(
-        "ReflectAOT: installed me.stringdotjar:reflectaot-runtime-embedded:$version into ~/.m2/repository " +
-          "(for resolution when settings use mavenLocal()).",
-      )
-      project.dependencies.add(
-        JavaPlugin.IMPLEMENTATION_CONFIGURATION_NAME,
-        "me.stringdotjar:reflectaot-runtime-embedded:$version",
-      )
-    } else {
-      val runtimeVersion =
-        ReflectAOTPlugin::class.java
-          .getResourceAsStream("/META-INF/reflectaot/runtime-version.txt")
-          ?.use { it.bufferedReader().readText().trim() }
-          ?: "0.1.0-SNAPSHOT"
-      project.dependencies.add(
-        JavaPlugin.IMPLEMENTATION_CONFIGURATION_NAME,
-        "me.stringdotjar:reflectaot-runtime:$runtimeVersion",
-      )
-    }
-
     val javaExt = project.extensions.getByType(JavaPluginExtension::class.java)
     val main = javaExt.sourceSets.getByName("main")
 
