@@ -257,6 +257,44 @@ class ReflectUsageScannerLocalConstantTest {
   }
 
   @Test
+  fun setProperty_threeArg_refines_receiver_when_value_is_primitive_false_boxed_to_boolean() {
+    val out = File(tempDir, "outSetPropBool")
+    val ok =
+      compileSources(
+        out,
+        StringSource(
+          "fixture.SetPropBool",
+          """
+          package fixture;
+          import me.stringdotjar.reflectaot.Reflect;
+          public class SetPropBool {
+            public static void run(Player player) {
+              Reflect.setProperty(player, "alive", false);
+            }
+          }
+          """.trimIndent(),
+        ),
+        StringSource(
+          "fixture.Player",
+          """
+          package fixture;
+          public class Player {
+            private boolean alive = true;
+            public boolean isAlive() { return alive; }
+            public void setAlive(boolean v) { this.alive = v; }
+          }
+          """.trimIndent(),
+        ),
+      )
+    assertTrue(ok)
+    val bytes = readClassBytes(out, "fixture/SetPropBool")
+    val (reflectCalls, _) = ReflectUsageScanner.scanClass(bytes)
+    val site = reflectCalls.single { it.reflectMethod == ReflectApiNames.SET_PROPERTY }
+    assertEquals("alive", site.nameLiteralOrNull)
+    assertEquals("fixture/Player", site.receiverInternalOrNull)
+  }
+
+  @Test
   fun forEachField_resolves_receiver_through_lambda_second_operand() {
     val out = File(tempDir, "outForEachLambda")
     val ok =

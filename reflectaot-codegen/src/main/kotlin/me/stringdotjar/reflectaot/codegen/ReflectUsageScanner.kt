@@ -810,6 +810,13 @@ object ReflectUsageScanner {
         if (insn.opcode == Opcodes.GETSTATIC && insn.desc == "Ljava/lang/Class;" && insn.name == "TYPE") {
           return p - 1
         }
+        if (insn.opcode == Opcodes.GETSTATIC &&
+          insn.owner == "java/lang/Boolean" &&
+          insn.desc == "Ljava/lang/Boolean;" &&
+          (insn.name == "TRUE" || insn.name == "FALSE")
+        ) {
+          return p - 1
+        }
         if (insn.opcode == Opcodes.GETFIELD) {
           var q = p - 1
           q = skipNonInstructionsBackward(insns, q)
@@ -838,6 +845,18 @@ object ReflectUsageScanner {
             insn.name == "valueOf" &&
             insn.desc == "(J)Ljava/lang/Long;" ->
             return stripTrailingBoxedLongLiteralBackward(insns, p)
+          insn.opcode == Opcodes.INVOKESTATIC &&
+            insn.owner == "java/lang/Boolean" &&
+            insn.name == "valueOf" &&
+            insn.desc == "(Z)Ljava/lang/Boolean;" -> {
+            var q = p - 1
+            q = skipNonInstructionsBackward(insns, q)
+            val lit = insns.getOrNull(q) ?: return -1
+            when {
+              lit is InsnNode && (lit.opcode == Opcodes.ICONST_0 || lit.opcode == Opcodes.ICONST_1) -> return q - 1
+              else -> return -1
+            }
+          }
           insn.opcode == Opcodes.INVOKESPECIAL && insn.name == "<init>" ->
             return stripConstructorInvocationBackward(insns, p)
         }
